@@ -128,18 +128,14 @@ app = FastAPI(
 
 # ── CORS (Cross-Origin Resource Sharing) ──────────────────────────────────────
 # Allows requests from our React + Vite frontend at port 5173
-import os
-
-# CORS configuration
-allowed_origins = [
-    "http://localhost:5173",
-    "https://greencampus-c3vencflt-sayan-d154.vercel.app",
-    "https://greencampus-ai-pi.vercel.app",
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=[
+        "http://localhost:5173",
+        "https://greencampus-c3vencflt-sayan-d154.vercel.app",
+        "https://greencampus-ai-pi.vercel.app",
+        "https://greencampus-jnelhrj5q-sayan-d154.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
