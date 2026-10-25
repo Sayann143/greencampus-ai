@@ -1,0 +1,40 @@
+import { Link, useLocation } from 'react-router-dom'
+
+export default function Navbar() {
+  const location = useLocation()
+
+  const linkClass = (path) =>
+    `px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 flex items-center gap-1.5 ${
+      location.pathname === path
+        ? 'bg-green-600 text-white shadow-sm'
+        : 'text-gray-600 hover:bg-green-50 hover:text-green-700'
+    }`
+
+  return (
+    <nav className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-50">
+      <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+        {/* Logo + Brand */}
+        <Link to="/dashboard" className="flex items-center gap-2">
+          <span className="text-2xl">🌿</span>
+          <div>
+            <h1 className="text-lg font-bold text-green-700 leading-tight">GreenCampus AI</h1>
+            <p className="text-xs text-gray-400 leading-tight">Smart Campus & Student Connect</p>
+          </div>
+        </Link>
+
+        {/* Navigation Links */}
+        <div className="flex items-center gap-1 sm:gap-2">
+          <Link to="/dashboard" className={linkClass('/dashboard')}>
+            📊 <span className="hidden sm:inline">Dashboard</span>
+          </Link>
+          <Link to="/report" className={linkClass('/report')}>
+            ✏️ <span className="hidden sm:inline">Report Issue</span>
+          </Link>
+          <Link to="/connect" className={linkClass('/connect')}>
+            🤝 <span>Campus Connect</span>
+          </Link>
+        </div>
+      </div>
+    </nav>
+  )
+}
