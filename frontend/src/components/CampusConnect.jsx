@@ -135,9 +135,9 @@ export default function CampusConnect() {
       setActiveStudents(data)
     } catch (err) {
       console.error('Failed to load active students:', err)
-      setDirectoryError(
-        'Unable to load available students. Please verify the backend is running at http://localhost:8000.'
-      )
+     setDirectoryError(
+  'Unable to load available students. Please check the deployed backend and try again.'
+)
     } finally {
       setLoadingDirectory(false)
     }

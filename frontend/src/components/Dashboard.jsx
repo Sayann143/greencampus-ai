@@ -93,9 +93,9 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Error fetching dashboard data:', err)
       setError(
-        'Unable to connect to the backend server at http://localhost:8000. ' +
-        'Please ensure the FastAPI backend is running (python3 -m uvicorn main:app --reload).'
-      )
+  'Unable to connect to the backend server at https://greencampus-ai-tfjl.onrender.com. ' +
+  'Please check that the backend is running and try again.'
+)
     } finally {
       setLoading(false)
     }
@@ -229,7 +229,7 @@ export default function Dashboard() {
           <div className="mt-8 flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-xl text-xs text-green-800">
             <span className="flex items-center gap-1.5 font-medium">
               <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
-              Connected to SQLite Backend (http://localhost:8000)
+              Connected to SQLite Backend (https://greencampus-ai-tfjl.onrender.com)
             </span>
             <span className="text-green-600">
               {tickets.length} total ticket{tickets.length === 1 ? '' : 's'} loaded
