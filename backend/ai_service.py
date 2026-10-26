@@ -51,10 +51,10 @@ REQUEST_TIMEOUT_SECONDS = 12
 # Sequential free Gemini models to cycle through if primary hits limits or errors
 FREE_GEMINI_FALLBACK_MODELS = [
     DEFAULT_PRIMARY_GEMINI,
-    "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
     "gemini-1.5-flash",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash-lite",
     "gemini-1.5-flash-8b",
 ]
 
@@ -87,15 +87,36 @@ SYSTEM_INSTRUCTION_TRIAGE = (
 )
 
 SYSTEM_INSTRUCTION_CHAT = (
-    "You are 'Echo', the vibrant, friendly, super-smart Gen Z Campus AI Assistant for GreenCampus AI.\n"
-    "Your mission: Help university students & staff navigate campus life, report facility issues, discover sustainability tips, and find peers.\n"
+    "You are 'Echo', the intelligent, friendly, vibrant AI companion and operations brain of GreenCampus AI.\n"
     "\n"
-    "Tone & Style Guidelines:\n"
-    "1. Keep it modern, engaging, punchy, and upbeat with relevant emojis (✨, 🌿, 💡, ☕, ⚡).\n"
-    "2. Be genuinely helpful and empathetic without corporate fluff or boomer vibes.\n"
-    "3. When students describe a campus problem (e.g. leak, broken AC, trash), encourage them to file a quick report in the 'Report Issue' tab so maintenance can track it.\n"
-    "4. When students want to study, hang out, or meet people, highlight the 'Campus Connect' tab.\n"
-    "5. STRICT SAFETY: Never falsely state that a facility issue has been repaired or that staff have already arrived. Keep reports realistic and factual."
+    "WHO YOU ARE & SYSTEM CONTEXT:\n"
+    "- Name: Echo (GreenCampus AI Assistant).\n"
+    "- Platform: GreenCampus AI — a university smart campus management, issue reporting, and student connect platform.\n"
+    "- Architecture: Full-stack system built with React + Vite on Vercel, Python + FastAPI on Render, persistent database, "
+    "and a resilient 4-tier AI engine (Google Gemini Studio, xAI Grok, OpenAI, and local campus engine).\n"
+    "\n"
+    "WHAT YOU CAN DO:\n"
+    "1. ⚡ Instant Facility Triage: Help students & staff report broken facilities (leaks, electrical, ACs, trash, potholes), "
+    "assess urgency (High/Medium/Low), and route to departments (Facilities, Electrical, Housekeeping, Civil Maintenance).\n"
+    "2. 📊 Track Campus Tickets: Guide users on how to check live ticket status and summary statistics on the Dashboard.\n"
+    "3. 🤝 Campus Connect Matchmaking: Explain how students can broadcast availability for 15, 30, or 60 mins for "
+    "STUDY, COFFEE, LUNCH, WALK, or CASUAL_CHAT across designated campus areas.\n"
+    "4. 🌱 Sustainability Hacks: Give campus-tailored recycling tips, energy reduction advice, and green living habits.\n"
+    "\n"
+    "WHAT YOU CANNOT DO:\n"
+    "1. 🚫 You cannot physically repair broken pipes, change light bulbs, or flip breakers (university facilities staff do that).\n"
+    "2. 🚫 You cannot claim an issue is resolved or that technicians have already arrived when they haven't.\n"
+    "3. 🚫 You cannot access confidential student grades, financial data, or collect invasive live GPS tracking.\n"
+    "\n"
+    "CONVERSATION & GREETING GUIDELINES:\n"
+    "- When user says 'Hi', 'Hello', 'Hey', 'Who are you?', or 'What can you do?':\n"
+    "  Give a warm, enthusiastic greeting introducing yourself as Echo! Clearly summarize what GreenCampus AI is, "
+    "what you CAN do (triage issues, track tickets, find study buddies via Campus Connect, green hacks), and what you "
+    "CANNOT do (physical repairs, claiming things are resolved). Provide 3 clickable starter action suggestions!\n"
+    "- When user reports a CRITICAL EMERGENCY (fire, smoke, bare sparking wires, gushing ceiling flood, injury):\n"
+    "  IMMEDIATELY give urgent safety advice (evacuate, do not touch water/wires), tell them to call campus security/emergency services, "
+    "and direct them to file an urgent ticket under 'High Priority' with location details.\n"
+    "- Tone: Friendly, modern, upbeat with relevant emojis (✨, 🌿, 💡, ☕, ⚡). Keep it punchy and actionable."
 )
 
 
@@ -564,60 +585,113 @@ def classify_ticket(
 # =============================================================================
 
 def _campus_knowledge_fallback(message: str) -> ChatResponse:
-    """Intelligent local campus knowledge responder when external APIs hit limits."""
-    text = message.lower()
+    """
+    Intelligent local campus knowledge responder when external APIs hit limits or are unconfigured.
+    Provides complete persona clarity: who Echo is, the GreenCampus AI architecture,
+    what she CAN do, what she CANNOT do, emergency instructions, and quick actions.
+    """
+    text = message.lower().strip()
     timestamp = datetime.now().strftime("%I:%M %p")
 
-    if any(w in text for w in ["leak", "water", "pipe", "tap", "flood", "drain"]):
+    # 1. Critical Campus Emergency
+    critical_words = ["fire", "smoke", "sparking", "shock", "bare wire", "explosion", "collapse", "gas leak", "injury", "blood", "emergency"]
+    if any(w in text for w in critical_words):
         reply = (
-            "💧 **Water or Plumbing Issue Detected!**\n\n"
-            "If there is active flooding or a ceiling leak, please stay clear of wet floors to avoid slips! "
-            "Head over to the **Report Issue** tab right now and submit a report — our AI will tag it as "
-            "High priority for the Facilities team. 🛠️"
+            "🚨 **CRITICAL CAMPUS EMERGENCY ALERT** 🚨\n\n"
+            "If there is an active safety hazard, immediate personal danger, or structural failure:\n\n"
+            "1. **EVACUATE IMMEDIATELY:** Move to a safe, open outdoor area (campus lawns or muster station).\n"
+            "2. **DO NOT TOUCH:** Keep clear of pooling water near electrical outlets, bare wires, or debris.\n"
+            "3. **CALL CAMPUS SECURITY / EMERGENCY:** Dial the Campus Control Room immediately!\n"
+            "4. **SUBMIT HIGH-PRIORITY REPORT:** Click **Report Issue** above, tag it **High Priority**, and specify the exact Block and Room so facilities dispatch emergency technicians right away! 🚒⚡"
         )
-        actions = ["Report Water Leak 💧", "View Open Tickets 📊", "Campus Safety Numbers ☎️"]
+        actions = ["Report Emergency Issue 🚨", "Campus Security Contacts ☎️", "View Urgent Alerts 📊"]
 
-    elif any(w in text for w in ["ac", "air condition", "cooler", "light", "power", "spark", "electric", "switch"]):
+    # 2. Greeting / Identity / Capabilities ("Hi", "Hello", "Who are you?", "What can you do?")
+    elif any(re.search(pattern, text) for pattern in [
+        r"\b(hi|hello|hey|yo|sup|greetings|hola)\b",
+        r"\bwho (are you|is echo)\b",
+        r"\bwhat (can you do|are you|do you do|is this)\b",
+        r"\bhelp\b",
+    ]):
         reply = (
-            "⚡ **Electrical or HVAC Problem!**\n\n"
-            "Safety first: never touch exposed wires or sparking sockets! You can submit an issue report with "
-            "the room number, and our system will route it directly to Electrical Maintenance. 💡"
+            "Hey there! 👋 I'm **Echo**, the central AI intelligence powering **GreenCampus AI**! 🌿✨\n\n"
+            "### 🧠 What I'm Built Around\n"
+            "I connect university students, faculty, and maintenance staff to keep our campus safe, sustainable, and connected. "
+            "My system runs on a high-availability full-stack architecture (React on Vercel + FastAPI on Render + persistent database), "
+            "backed by an auto-failing multi-tier AI engine (**Google Gemini Free Tier** $\\rightarrow$ **xAI Grok** $\\rightarrow$ **OpenAI** $\\rightarrow$ **Local Heuristic Engine**).\n\n"
+            "---\n\n"
+            "### 🚀 What I CAN Do For You\n"
+            "• ⚡ **Instant Facility Triage:** Spot a broken AC, water leak, flickering light, or overflowing bin? Tell me and I'll analyze urgency and guide your report.\n"
+            "• 📊 **Live Campus Health & Tracking:** Check real-time resolution rates and see which campus tickets are currently *Open*, *In Progress*, or *Resolved*.\n"
+            "• 🤝 **Campus Connect Matchmaking:** Broadcast your availability for 15, 30, or 60 mins for STUDY, COFFEE, or CASUAL_CHAT to meet peers without awkward DMs!\n"
+            "• 🌱 **Eco & Green Campus Hacks:** Learn university recycling bin locations, energy-saving habits, and eco-initiatives.\n\n"
+            "---\n\n"
+            "### 🛑 What I CANNOT Do\n"
+            "• 🚫 I cannot physically turn off water valves or fix circuit breakers myself (our human campus maintenance crew does that!).\n"
+            "• 🚫 I will never falsely claim a repair is finished or that technicians have arrived when they haven't.\n"
+            "• 🚫 I do not access confidential student grades or personal financial records, and I never track live GPS.\n\n"
+            "What would you like to do on campus today? Tap a quick option below or ask me anything! ✨"
+        )
+        actions = ["Report Campus Issue ✏️", "Find Study Buddy ☕", "Check Open Issues 📊"]
+
+    # 3. Water & Plumbing
+    elif any(w in text for w in ["leak", "water", "pipe", "tap", "flood", "drain", "sink", "toilet", "washroom"]):
+        reply = (
+            "💧 **Water & Plumbing Triage**\n\n"
+            "Active water leaks are a primary slip hazard and cause major facility damage! "
+            "Please watch your step and report the exact floor/washroom in the **Report Issue** tab. "
+            "Our AI auto-flags active leaks as **High Priority** for the Plumbing Maintenance team. 🛠️"
+        )
+        actions = ["Report Water Leak 💧", "View Open Tickets 📊", "Campus Map 📍"]
+
+    # 4. Electrical & HVAC
+    elif any(w in text for w in ["ac", "air condition", "cooler", "light", "power", "spark", "electric", "switch", "fan", "projector"]):
+        reply = (
+            "⚡ **Electrical & Air Conditioning Triage**\n\n"
+            "Safety protocol: never touch flickering fixtures or sparking outlets! "
+            "If an AC is blowing warm air or a projector is down in a lecture hall, submit a quick ticket under **Electrical** "
+            "with the room number so technicians can replace ballasts or recharge refrigerant. 💡"
         )
         actions = ["Report Electrical Fault ⚡", "Check Dashboard Status 📊"]
 
-    elif any(w in text for w in ["trash", "dustbin", "clean", "dirty", "smell", "garbage", "waste"]):
+    # 5. Cleanliness & Sanitation
+    elif any(w in text for w in ["trash", "dustbin", "clean", "dirty", "smell", "garbage", "waste", "litter", "spill"]):
         reply = (
-            "🧹 **Cleanliness & Sanitation Alert!**\n\n"
-            "Nobody likes overflowing bins or messy halls. Drop a report with the exact location (e.g., Cafeteria or Block B) "
-            "so Housekeeping can schedule an extra cleaning round! 🌿"
+            "🧹 **Cleanliness & Sanitation Alert**\n\n"
+            "Keeping campus hygienic is top priority. Drop a quick report specifying the cafeteria area or corridor. "
+            "Housekeeping services will dispatch sanitation staff for waste clearance and surface disinfection! 🌿"
         )
         actions = ["Report Cleanliness Issue 🧹", "View Cafeteria Tickets 🍽️"]
 
-    elif any(w in text for w in ["friend", "study", "meet", "coffee", "connect", "bored", "chat", "peer"]):
+    # 6. Student Connection & Meetups
+    elif any(w in text for w in ["friend", "study", "meet", "coffee", "connect", "bored", "chat", "peer", "lonely", "lunch", "walk"]):
         reply = (
             "🤝 **Looking to connect with fellow students?**\n\n"
             "Check out our **Campus Connect** tab! You can broadcast your availability for 15, 30, or 60 mins "
-            "for STUDY, COFFEE, or CASUAL_CHAT, or discover who is free right now across campus areas. No awkward DMs! ✨"
+            "for STUDY, COFFEE, or CASUAL_CHAT, or discover who is free right now in the Library, SAC, or Cafeteria. "
+            "Zero awkward DMs — just friendly, safe campus connections! ✨"
         )
         actions = ["Open Campus Connect 🤝", "Broadcast Availability ⏱️"]
 
-    elif any(w in text for w in ["recycle", "plastic", "green", "sustainable", "solar", "eco"]):
+    # 7. Sustainability & Green Campus
+    elif any(w in text for w in ["recycle", "plastic", "green", "sustainable", "solar", "eco", "waste", "conservation"]):
         reply = (
             "🌱 **Green Campus Pro-Tips:**\n\n"
-            "• Bring your own reusable mug to the Cafeteria to save ~15 disposable cups a week.\n"
-            "• Switch off PC monitors in the computer labs before leaving.\n"
-            "• Drop e-waste at the SAC Tech recycling bin!\n\n"
-            "Small habits make a huge campus difference! 💚"
+            "• **E-Waste:** Drop dead batteries and obsolete cables at the Student Activity Center tech collection box.\n"
+            "• **Reusables:** Bring your own cup to the campus cafeteria to save hundreds of single-use paper cups every term.\n"
+            "• **Energy:** Always toggle off lab PC monitors and lighting before leaving study pods.\n\n"
+            "Every green habit keeps our university leading sustainability! 💚"
         )
         actions = ["Campus Green Map 🗺️", "Report Energy Waste 💡"]
 
+    # 8. General Campus Query
     else:
         reply = (
-            "Hey there! 🌿 I'm **Echo**, your GreenCampus AI companion. "
-            "I can help you report broken facilities, triage campus hazards, share green living hacks, "
-            "or link you with study buddies in Campus Connect! What's on your mind today? ✨"
+            "Got it! 🌿 As your campus AI companion, I can help you triage facility issues, "
+            "find study partners in **Campus Connect**, check the **Admin Dashboard**, or give eco-tips. "
+            "Could you give me a bit more detail on what you need help with? ✨"
         )
-        actions = ["Report Campus Issue ✏️", "Find Study Buddy ☕", "Check Open Issues 📊"]
+        actions = ["Report Issue ✏️", "Campus Connect 🤝", "Dashboard 📊"]
 
     return ChatResponse(
         reply=reply,

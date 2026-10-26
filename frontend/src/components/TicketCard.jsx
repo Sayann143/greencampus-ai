@@ -1,40 +1,46 @@
 import { useState } from 'react'
 
-// Priority badge: colour changes based on urgency level
+// Priority badge with animated pulse for High urgency
 export function PriorityBadge({ priority }) {
   const styles = {
-    High:   'bg-red-100 text-red-700 border border-red-200',
-    Medium: 'bg-yellow-100 text-yellow-700 border border-yellow-200',
-    Low:    'bg-green-100 text-green-700 border border-green-200',
+    High:   'bg-red-50 text-red-700 border border-red-300 ring-2 ring-red-400/30 shadow-xs',
+    Medium: 'bg-amber-50 text-amber-700 border border-amber-200',
+    Low:    'bg-emerald-50 text-emerald-700 border border-emerald-200',
   }
   const icons = { High: '🔴', Medium: '🟡', Low: '🟢' }
 
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${styles[priority] || styles.Low}`}>
-      {icons[priority]} {priority}
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${styles[priority] || styles.Low}`}>
+      <span className={priority === 'High' ? 'animate-ping inline-block w-1.5 h-1.5 rounded-full bg-red-500 mr-0.5' : ''}></span>
+      <span>{icons[priority]}</span>
+      <span>{priority}</span>
     </span>
   )
 }
 
-// Status badge: shows ticket lifecycle
+// Status badge with smooth pill styling
 export function StatusBadge({ status }) {
   const styles = {
-    Open:          'bg-blue-100 text-blue-700 border border-blue-200',
-    'In Progress': 'bg-orange-100 text-orange-700 border border-orange-200',
-    Resolved:      'bg-gray-100 text-gray-600 border border-gray-200',
+    Open:          'bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs',
+    'In Progress': 'bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs animate-pulse',
+    Resolved:      'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs',
+  }
+  const dots = {
+    Open: 'bg-blue-500',
+    'In Progress': 'bg-amber-500',
+    Resolved: 'bg-emerald-500',
   }
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${styles[status] || styles.Open}`}>
-      {status}
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${styles[status] || styles.Open}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${dots[status] || 'bg-gray-400'}`}></span>
+      <span>{status}</span>
     </span>
   )
 }
 
-// Helper to format timestamps nicely
 function formatDate(dateStr) {
   if (!dateStr) return ''
-  // If already user-formatted (e.g. "Today, 09:12 AM")
   if (dateStr.includes('Today') || dateStr.includes('Yesterday') || dateStr.includes('ago')) {
     return dateStr
   }
@@ -52,14 +58,15 @@ function formatDate(dateStr) {
   }
 }
 
-// One ticket card
 export default function TicketCard({ ticket, onStatusChange }) {
   const [isUpdating, setIsUpdating] = useState(false)
+  const [showAiDetails, setShowAiDetails] = useState(false)
 
-  // Normalise backend vs frontend field names
   const submittedBy = ticket.submitted_by || ticket.submittedBy || 'Anonymous'
   const dateDisplay = formatDate(ticket.created_at || ticket.date)
   const aiSuggestion = ticket.ai_suggestion || ticket.aiSuggestion
+  const aiAction = ticket.ai_action
+  const isHigh = ticket.priority === 'High'
 
   async function handleStatusSelect(e) {
     const newStatus = e.target.value
@@ -73,73 +80,99 @@ export default function TicketCard({ ticket, onStatusChange }) {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
+    <div className={`group bg-white rounded-2xl border transition-all duration-300 flex flex-col justify-between p-5 hover:-translate-y-1 hover:shadow-xl ${
+      isHigh
+        ? 'border-red-200 hover:border-red-400 shadow-sm shadow-red-500/5'
+        : 'border-gray-200 hover:border-emerald-300 shadow-sm'
+    }`}>
       <div>
-        {/* Header row */}
-        <div className="flex items-start justify-between gap-2 mb-3">
-          <div>
-            <span className="text-xs font-mono text-gray-400">
+        {/* Top meta row */}
+        <div className="flex items-start justify-between gap-2 mb-2.5">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs font-bold text-gray-400 bg-gray-50 border border-gray-100 rounded-md px-1.5 py-0.5">
               #{typeof ticket.id === 'number' ? `GC-${String(ticket.id).padStart(3, '0')}` : ticket.id}
             </span>
-            <h3 className="font-semibold text-gray-800 text-sm mt-0.5">{ticket.title}</h3>
+            <span className="text-[11px] text-gray-400">{dateDisplay}</span>
           </div>
           <PriorityBadge priority={ticket.priority} />
         </div>
 
-        {/* Description */}
-        <p className="text-sm text-gray-500 mb-4 line-clamp-2">{ticket.description}</p>
+        {/* Title */}
+        <h3 className="font-bold text-gray-800 text-base leading-snug group-hover:text-emerald-700 transition-colors mb-2">
+          {ticket.title}
+        </h3>
 
-        {/* Meta row */}
-        <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-3">
-          <span className="bg-gray-50 border border-gray-100 rounded px-2 py-1">
+        {/* Description */}
+        <p className="text-xs text-gray-600 mb-3.5 line-clamp-2 leading-relaxed">
+          {ticket.description}
+        </p>
+
+        {/* Category & Location Badges */}
+        <div className="flex flex-wrap gap-1.5 text-xs text-gray-600 mb-4">
+          <span className="bg-emerald-50/80 text-emerald-800 border border-emerald-100/80 rounded-lg px-2.5 py-1 font-medium flex items-center gap-1">
             🏷️ {ticket.category}
           </span>
-          <span className="bg-gray-50 border border-gray-100 rounded px-2 py-1">
+          <span className="bg-gray-50 text-gray-700 border border-gray-200/60 rounded-lg px-2.5 py-1 font-medium flex items-center gap-1">
             📍 {ticket.location}
           </span>
-          <span className="bg-gray-50 border border-gray-100 rounded px-2 py-1">
+          <span className="bg-purple-50 text-purple-700 border border-purple-100 rounded-lg px-2.5 py-1 font-medium flex items-center gap-1">
             🏢 {ticket.department || 'Unassigned'}
           </span>
         </div>
       </div>
 
       <div>
-        {/* Footer row with status changer */}
-        <div className="flex items-center justify-between pt-3 border-t border-gray-100 gap-2">
-          <div className="flex items-center gap-1.5">
+        {/* Expandable AI Triage Suggestion */}
+        {(aiSuggestion || aiAction) && (
+          <div className="mb-3.5">
+            <button
+              onClick={() => setShowAiDetails(!showAiDetails)}
+              className="w-full text-left text-xs font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50/60 hover:bg-emerald-100/60 border border-emerald-200/60 rounded-xl px-3 py-1.5 transition-colors flex items-center justify-between"
+            >
+              <span className="flex items-center gap-1.5">
+                <span className="animate-spin text-[10px]">✨</span>
+                <span>AI Facility Recommendation</span>
+              </span>
+              <span className="text-gray-400 text-xs font-mono">{showAiDetails ? '▲ Hide' : '▼ View'}</span>
+            </button>
+
+            {showAiDetails && (
+              <div className="mt-2 p-3 bg-gradient-to-r from-emerald-50/90 to-teal-50/90 border border-emerald-200/80 rounded-xl text-xs text-emerald-900 leading-relaxed shadow-xs animate-fade-in">
+                <p className="font-medium">{aiSuggestion}</p>
+                {aiAction && (
+                  <p className="mt-1.5 pt-1.5 border-t border-emerald-200/60 font-semibold text-emerald-950">
+                    Action: {aiAction}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Footer: Status changer dropdown & reporter */}
+        <div className="flex items-center justify-between pt-3 border-t border-gray-100 text-xs">
+          <div className="flex items-center gap-2">
             <StatusBadge status={ticket.status} />
             {onStatusChange && (
               <select
-                aria-label="Change status"
+                aria-label="Update ticket status"
                 value={ticket.status}
                 onChange={handleStatusSelect}
                 disabled={isUpdating}
-                className="text-xs bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5 text-gray-600 focus:outline-none focus:ring-1 focus:ring-green-500 cursor-pointer disabled:opacity-50"
+                className="text-xs bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg px-2 py-1 text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer disabled:opacity-50 transition"
               >
                 <option value="Open">Open</option>
                 <option value="In Progress">In Progress</option>
                 <option value="Resolved">Resolved</option>
               </select>
             )}
-            {isUpdating && (
-              <span className="text-xs text-gray-400 animate-pulse">saving…</span>
-            )}
+            {isUpdating && <span className="text-[10px] text-gray-400 animate-pulse">saving...</span>}
           </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-400">{submittedBy}</p>
-            <p className="text-xs text-gray-300">{dateDisplay}</p>
-          </div>
-        </div>
 
-        {/* AI suggestion box */}
-        {aiSuggestion && (
-          <div className="mt-3 bg-green-50 border border-green-100 rounded-lg p-3">
-            <p className="text-xs font-semibold text-green-700 mb-1 flex items-center gap-1">
-              <span>🤖</span> AI Recommendation
-            </p>
-            <p className="text-xs text-green-700 leading-relaxed">{aiSuggestion}</p>
-          </div>
-        )}
+          <span className="text-[11px] text-gray-400 font-medium">
+            By <strong className="text-gray-600">{submittedBy}</strong>
+          </span>
+        </div>
       </div>
     </div>
   )
