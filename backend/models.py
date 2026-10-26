@@ -66,9 +66,9 @@ class GeminiClassification(BaseModel):
         max_length=1000,
         description="Recommended next steps for campus maintenance staff (not resolved)"
     )
-    source: Literal["gemini", "fallback"] = Field(
+    source: Literal["gemini", "grok", "openai", "fallback"] = Field(
         "gemini",
-        description="Origin of the classification: 'gemini' or 'fallback'"
+        description="Origin of the classification: 'gemini', 'grok', 'openai', or 'fallback'"
     )
 
 

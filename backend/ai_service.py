@@ -1,21 +1,25 @@
 """
-ai_service.py — AI Classification service using Google Gemini and a rule-based fallback.
+ai_service.py — Resilient Multi-Tier AI Classification Service with Automatic Failover.
 
-Responsibilities:
-1. Loads GEMINI_API_KEY from backend environment / .env file.
-2. Calls Gemini using the official google-genai SDK with structured JSON outputs.
-3. Validates every response against the GeminiClassification Pydantic schema.
-4. Handles missing API keys, rate limits, invalid output, and network errors gracefully.
-5. Provides a clearly-labelled fallback classifier when the Gemini key is absent or unreachable.
-6. Strictly abides by campus safety guidelines:
-   - Does NOT claim an issue is resolved.
-   - Does NOT claim staff/contractors have already been contacted or dispatched.
+Architecture:
+  Tier 1 (Primary):      Google Gemini (official google-genai SDK, model fallback)
+  Tier 2 (Fallback 1):   xAI Grok (chat completions REST API, bounded timeout)
+  Tier 3 (Fallback 2):   OpenAI (chat completions REST API, bounded timeout)
+  Tier 4 (Guaranteed):   Deterministic local rule-based classifier (zero network dependencies)
+
+Strict Safety Guidelines:
+  - Output is strictly validated against GeminiClassification Pydantic schema.
+  - Never claims an issue has been resolved.
+  - Never claims maintenance staff or contractors have arrived or been contacted.
+  - Keeps all API keys strictly on the server; never logs or leaks them.
 """
 
 import os
 import re
 import json
 import logging
+import urllib.request
+import urllib.error
 from typing import Optional
 from pathlib import Path
 from dotenv import load_dotenv
@@ -26,27 +30,126 @@ from models import GeminiClassification, AICategoryType, PriorityType
 logger = logging.getLogger("greencampus.ai")
 logging.basicConfig(level=logging.INFO)
 
-# Load .env file from the backend folder
+# Load .env file from backend folder
 ENV_PATH = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+DEFAULT_GROK_MODEL = "grok-2-latest"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+REQUEST_TIMEOUT_SECONDS = 12
+
+SYSTEM_INSTRUCTION = (
+    "You are the expert campus facility and operations triage assistant for GreenCampus AI.\n"
+    "Your task is to analyze campus issue reports submitted by students and staff, and categorize them accurately.\n"
+    "\n"
+    "ALLOWED CATEGORIES:\n"
+    "- 'Water & Plumbing' (leaks, pipe bursts, drainage, taps, toilets, floods)\n"
+    "- 'Electrical' (power cuts, faulty lights, sparking, exposed wires, broken fans, ACs, projectors)\n"
+    "- 'Cleanliness' (overflowing bins, litter, unhygienic washrooms, pest sightings, foul odors)\n"
+    "- 'Infrastructure' (potholes, damaged stairs, broken furniture, doors, windows, structural cracks)\n"
+    "- 'Sustainability' (energy wastage, continuous tap running without fault, recycling opportunities, campus greenery)\n"
+    "- 'Other' (general campus issues not covered above)\n"
+    "\n"
+    "PRIORITY GUIDELINES:\n"
+    "- 'High': Immediate safety hazards (sparking wires, active flooding, slippery floor in heavy traffic, broken stairs)\n"
+    "- 'Medium': Impairs campus activities or causes discomfort (AC breakdown in lab, unlit path, broken bench, full bins)\n"
+    "- 'Low': Minor cosmetic issues, non-urgent maintenance, general feedback\n"
+    "\n"
+    "STRICT ETHICAL & OPERATIONAL RULES:\n"
+    "1. The ticket status is currently 'Open'. Do NOT claim or assume that the issue has been resolved.\n"
+    "2. Do NOT claim or state that campus staff, technicians, or contractors have already been contacted, dispatched, or arrived.\n"
+    "3. Frame 'recommended_action' as actionable, concrete immediate instructions for maintenance responders (e.g. 'Shut off supply valve and schedule plumbing repair', NOT 'Staff has arrived').\n"
+    "4. Provide a clear, factual 'explanation' (1-2 sentences) of the root concern and priority rationale."
+)
 
 
-def is_api_key_configured() -> bool:
-    """Check if a real Gemini API key is configured (not empty or default placeholder)."""
-    key = os.getenv("GEMINI_API_KEY", "").strip()
-    placeholder_patterns = [
-        "",
+def _is_valid_key(key: Optional[str]) -> bool:
+    """Helper to verify a non-empty, non-placeholder API key."""
+    if not key or not key.strip():
+        return False
+    placeholders = {
         "your_gemini_api_key_here",
         "your_key_here",
         "placeholder",
-    ]
-    return bool(key) and key.lower() not in placeholder_patterns
+        "your_xai_api_key_here",
+        "your_openai_api_key_here",
+    }
+    return key.strip().lower() not in placeholders
+
+
+def is_gemini_configured() -> bool:
+    """Returns True if a real Gemini API key is configured."""
+    return _is_valid_key(os.getenv("GEMINI_API_KEY"))
+
+
+def is_xai_configured() -> bool:
+    """Returns True if a real xAI Grok API key is configured."""
+    return _is_valid_key(os.getenv("XAI_API_KEY"))
+
+
+def is_openai_configured() -> bool:
+    """Returns True if a real OpenAI API key is configured."""
+    return _is_valid_key(os.getenv("OPENAI_API_KEY"))
+
+
+def is_api_key_configured() -> bool:
+    """Maintains backward compatibility with main.py and health check."""
+    return is_gemini_configured() or is_xai_configured() or is_openai_configured()
+
+
+def get_ai_providers_status() -> dict:
+    """Returns detailed status of all 4 AI tiers for /api/health."""
+    active_primary = "rule_based_fallback"
+    if is_gemini_configured():
+        active_primary = "gemini"
+    elif is_xai_configured():
+        active_primary = "grok"
+    elif is_openai_configured():
+        active_primary = "openai"
+
+    return {
+        "active_primary": active_primary,
+        "gemini": {
+            "configured": is_gemini_configured(),
+            "model": os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
+        },
+        "grok": {
+            "configured": is_xai_configured(),
+            "model": os.getenv("XAI_MODEL", DEFAULT_GROK_MODEL),
+        },
+        "openai": {
+            "configured": is_openai_configured(),
+            "model": os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
+        },
+        "rule_based_fallback": {
+            "configured": True,
+            "status": "always active",
+        },
+    }
+
+
+def _build_triage_prompt(
+    title: str,
+    description: str,
+    location: str,
+    user_category: Optional[str] = None,
+) -> str:
+    """Formats the ticket details into a concise prompt for LLM providers."""
+    return (
+        f"Campus Issue Report to Triage:\n"
+        f"Title: {title}\n"
+        f"Location: {location}\n"
+        f"User-Suggested Category: {user_category or 'Not specified'}\n"
+        f"Detailed Description: {description}\n"
+        f"\n"
+        f"Generate the structured JSON classification with keys: "
+        f"category, priority, department, explanation, recommended_action."
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FALLBACK CLASSIFIER (Clearly labelled, zero-dependency, always reliable)
+# TIER 4: DETERMINISTIC LOCAL RULE-BASED FALLBACK CLASSIFIER
 # ─────────────────────────────────────────────────────────────────────────────
 def fallback_classify(
     title: str,
@@ -55,45 +158,39 @@ def fallback_classify(
     user_category: Optional[str] = None,
 ) -> GeminiClassification:
     """
-    Keyword-based fallback classifier used when:
-    - GEMINI_API_KEY is not set
-    - Gemini API is unreachable, quota-exhausted, or returns an error
-
-    Clearly labelled with '[Fallback Classifier]' in explanation.
-    Never claims the issue is resolved or staff have been dispatched.
+    Guaranteed zero-dependency keyword classifier.
+    Runs locally with zero external network dependencies.
     """
     combined_text = f"{title} {description} {location} {user_category or ''}".lower()
 
-    # Keyword rules for categorization
     water_keywords = [
         "water", "leak", "leaking", "pipe", "tap", "faucet", "drain", "drainage",
         "flush", "toilet", "washroom", "restroom", "sink", "sewage", "sewer",
-        "plumbing", "flood", "flooding", "overflow", "drip", "dripping"
+        "plumbing", "flood", "flooding", "overflow", "drip", "dripping",
     ]
     electrical_keywords = [
         "electric", "electrical", "light", "lighting", "bulb", "lamp", "spark",
         "sparking", "wire", "wiring", "power", "switch", "socket", "outlet",
         "blackout", "ac", "air condition", "air-condition", "cooler", "fan",
-        "generator", "mcb", "circuit", "short circuit", "voltage", "projector"
+        "generator", "mcb", "circuit", "short circuit", "voltage", "projector",
     ]
     cleanliness_keywords = [
         "garbage", "trash", "dustbin", "bin", "waste", "dirty", "filth", "clean",
         "cleanliness", "smell", "odour", "odor", "litter", "spill", "stain",
-        "housekeeping", "hygiene", "unhygienic", "pest", "rodent", "insects"
+        "housekeeping", "hygiene", "unhygienic", "pest", "rodent", "insects",
     ]
     infrastructure_keywords = [
         "bench", "desk", "chair", "table", "door", "window", "glass", "pothole",
         "road", "pathway", "sidewalk", "wall", "crack", "cracked", "tile",
         "corridor", "ceiling", "floor", "stairs", "staircase", "step", "railing",
-        "handrail", "lock", "handle", "gate", "fence", "lift", "elevator"
+        "handrail", "lock", "handle", "gate", "fence", "lift", "elevator",
     ]
     sustainability_keywords = [
         "solar", "recycle", "recycling", "compost", "composting", "energy waste",
         "food waste", "tree", "greenery", "garden", "plants", "sustainable",
-        "sustainability", "conservation", "water waste", "plastic"
+        "sustainability", "conservation", "water waste", "plastic",
     ]
 
-    # Category matching
     if any(k in combined_text for k in water_keywords):
         category: AICategoryType = "Water & Plumbing"
         department = "Facilities Management (Plumbing)"
@@ -104,99 +201,97 @@ def fallback_classify(
                 "[Fallback Classifier] Active water leakage identified near campus facilities. "
                 "Presents immediate slip-and-fall hazard and potential structural/water damage risk."
             )
+            action = "Locate and isolate the nearest section shut-off valve, cordon off wet flooring with caution cones, and schedule plumbing technician inspection."
         else:
-            priority = "Medium"
+            priority: PriorityType = "Medium"
             explanation = (
-                "[Fallback Classifier] Plumbing or water fixture defect reported. "
-                "Requires timely maintenance to avoid water wastage and area deterioration."
+                "[Fallback Classifier] Plumbing fixture malfunction reported. Causes continuous water waste "
+                "and campus facility degradation if unaddressed."
             )
-        recommended_action = (
-            "Locate and isolate the nearest section shut-off valve, cordon off wet flooring with caution cones, "
-            "and schedule plumbing technician inspection."
-        )
+            action = "Inspect the tap/valve seals, replace faulty washers or fittings, and confirm drainage flow."
 
     elif any(k in combined_text for k in electrical_keywords):
         category = "Electrical"
-        department = "Campus Electrical Services"
-        high_risk_words = ["spark", "fire", "smoke", "shock", "exposed", "burning", "danger", "hazard"]
-        if any(w in combined_text for w in high_risk_words):
+        department = "Electrical Maintenance Team"
+        emergency_words = ["spark", "smoke", "burning", "bare wire", "shock", "fire"]
+        if any(w in combined_text for w in emergency_words):
             priority = "High"
             explanation = (
-                "[Fallback Classifier] Critical electrical fault with elevated safety risk. "
-                "Presents hazard of electric shock, equipment damage, or electrical fire."
+                "[Fallback Classifier] Severe electrical hazard detected. Risk of electrical shock, "
+                "circuit blowout, or fire hazard requiring urgent isolation."
             )
+            action = "Trip corresponding distribution MCB breaker immediately, place danger warning tape, and dispatch certified electrician."
         else:
             priority = "Medium"
             explanation = (
-                "[Fallback Classifier] Electrical malfunction reported affecting lighting, cooling, or power delivery."
+                "[Fallback Classifier] Electrical fixture outage affecting campus usability and lighting levels."
             )
-        recommended_action = (
-            "Switch off power at the local distribution board/MCB, place a hazard warning tag on the fixture, "
-            "and schedule certified electrician diagnosis."
-        )
+            action = "Check fixture ballasts, replace burnt-out lamps, and verify voltage supply at the distribution board."
 
     elif any(k in combined_text for k in cleanliness_keywords):
         category = "Cleanliness"
-        department = "Housekeeping & Sanitation"
-        high_risk_words = ["biohazard", "toxic", "chemical", "severe", "overflowing", "infestation"]
-        priority = "Medium" if any(w in combined_text for w in high_risk_words) else "Low"
-        explanation = (
-            "[Fallback Classifier] Sanitation or waste accumulation reported on campus premises. "
-            "Impacts campus hygiene and student comfort."
-        )
-        recommended_action = (
-            "Dispatch housekeeping crew for waste collection, empty disposal bins, and sanitize surrounding surfaces."
-        )
+        department = "Housekeeping & Sanitation Services"
+        if any(w in combined_text for w in ["overflow", "pest", "rodent", "rotting", "stink"]):
+            priority = "Medium"
+            explanation = (
+                "[Fallback Classifier] Unsanitary conditions reported in active campus area. "
+                "Presents hygiene risks and aesthetic disturbance."
+            )
+            action = "Empty waste containers, sanitize surrounding area with hospital-grade disinfectant, and deploy odor-neutralizing treatment."
+        else:
+            priority = "Low"
+            explanation = (
+                "[Fallback Classifier] Routine cleaning requirement identified in campus premises."
+            )
+            action = "Schedule janitorial round for sweep, mop, and waste clearance during regular service hours."
 
     elif any(k in combined_text for k in infrastructure_keywords):
         category = "Infrastructure"
-        department = "Civil Works & Infrastructure"
-        high_risk_words = ["collapse", "pothole", "broken glass", "stairs", "railing", "danger", "fall"]
-        priority = "High" if any(w in combined_text for w in high_risk_words) else "Medium"
-        explanation = (
-            "[Fallback Classifier] Physical infrastructure or structural fixture reported damaged. "
-            "Requires civil maintenance to prevent injury and restore facility function."
-        )
-        recommended_action = (
-            "Mark the damaged item or zone with physical warning signage and schedule civil maintenance repairs."
-        )
+        department = "Campus Civil Infrastructure & Maintenance"
+        danger_words = ["stairs", "staircase", "broken glass", "collapsed", "hole", "pothole"]
+        if any(w in combined_text for w in danger_words):
+            priority = "High"
+            explanation = (
+                "[Fallback Classifier] Physical infrastructure damage presenting physical injury risk to students and faculty."
+            )
+            action = "Place protective barriers around damaged section and schedule emergency carpentry/masonry repair."
+        else:
+            priority = "Medium"
+            explanation = (
+                "[Fallback Classifier] Damaged fixture or physical infrastructure impacting normal academic operations."
+            )
+            action = "Log work order for structural repair, assess repair parts needed, and schedule restoration."
 
     elif any(k in combined_text for k in sustainability_keywords):
         category = "Sustainability"
         department = "Campus Sustainability Office"
         priority = "Low"
         explanation = (
-            "[Fallback Classifier] Sustainability or ecological conservation observation on campus. "
-            "Presents opportunity to optimize campus resource usage."
+            "[Fallback Classifier] Sustainability or resource conservation opportunity observed."
         )
-        recommended_action = (
-            "Log report with the Campus Sustainability Office for resource assessment and green initiative review."
-        )
+        action = "Assess conservation impact, adjust timers or signage, and log for the campus sustainability review."
 
     else:
-        # Default fallback
         category = "Other"
-        department = "Campus Operations"
-        priority = "Medium"
+        department = "Campus Facilities General Helpdesk"
+        priority = "Medium" if "urgent" in combined_text else "Low"
         explanation = (
-            "[Fallback Classifier] Campus issue logged under general operations for evaluation."
+            "[Fallback Classifier] General campus issue report categorized under facilities overview."
         )
-        recommended_action = (
-            "Review report details, assign to appropriate building supervisor, and conduct on-site verification."
-        )
+        action = "Conduct initial on-site review to identify appropriate maintenance trade and log task."
 
     return GeminiClassification(
         category=category,
         priority=priority,
         department=department,
         explanation=explanation,
-        recommended_action=recommended_action,
+        recommended_action=action,
         source="fallback",
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GEMINI CLASSIFIER (Official google-genai SDK with structured output)
+# TIER 1: GOOGLE GEMINI (Primary Provider)
 # ─────────────────────────────────────────────────────────────────────────────
 def classify_with_gemini(
     title: str,
@@ -205,82 +300,181 @@ def classify_with_gemini(
     user_category: Optional[str] = None,
 ) -> GeminiClassification:
     """
-    Calls Google Gemini using the official `google-genai` SDK.
-    Enforces structured JSON output validated against GeminiClassification.
+    Calls Google Gemini using the official google-genai SDK.
+    Tries configured model first, falling back to gemini-2.0-flash / gemini-1.5-flash if model name is unrecognized.
     """
-    # Import here so that backend works even if SDK imports fail in minimal test environments
     from google import genai
     from google.genai import types
 
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    model_name = os.getenv("GEMINI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    configured_model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
 
-    # Initialize official client
     client = genai.Client(api_key=api_key)
+    prompt = _build_triage_prompt(title, description, location, user_category)
 
-    system_instruction = (
-        "You are the expert campus facility and operations triage assistant for GreenCampus AI.\n"
-        "Your task is to analyze campus issue reports submitted by students and staff, and categorize them accurately.\n"
-        "\n"
-        "ALLOWED CATEGORIES:\n"
-        "- 'Water & Plumbing' (leaks, pipe bursts, drainage, taps, toilets, floods)\n"
-        "- 'Electrical' (power cuts, faulty lights, sparking, exposed wires, broken fans, ACs, projectors)\n"
-        "- 'Cleanliness' (overflowing bins, litter, unhygienic washrooms, pest sightings, foul odors)\n"
-        "- 'Infrastructure' (potholes, damaged stairs, broken furniture, doors, windows, structural cracks)\n"
-        "- 'Sustainability' (energy wastage, continuous tap running without fault, recycling opportunities, campus greenery)\n"
-        "- 'Other' (general campus issues not covered above)\n"
-        "\n"
-        "PRIORITY GUIDELINES:\n"
-        "- 'High': Immediate safety hazards (sparking wires, active flooding, slippery floor in heavy traffic, broken stairs)\n"
-        "- 'Medium': Impairs campus activities or causes discomfort (AC breakdown in lab, unlit path, broken bench, full bins)\n"
-        "- 'Low': Minor cosmetic issues, non-urgent maintenance, general feedback\n"
-        "\n"
-        "STRICT ETHICAL & OPERATIONAL RULES:\n"
-        "1. The ticket status is currently 'Open'. Do NOT claim or assume that the issue has been resolved.\n"
-        "2. Do NOT claim or state that campus staff, technicians, or contractors have already been contacted, dispatched, or arrived.\n"
-        "3. Frame 'recommended_action' as actionable, concrete immediate instructions for maintenance responders (e.g. 'Shut off supply valve and schedule plumbing repair', NOT 'Staff has arrived').\n"
-        "4. Provide a clear, factual 'explanation' (1-2 sentences) of the root concern and priority rationale."
-    )
+    # Models to try in order
+    candidate_models = [configured_model]
+    for fallback_m in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+        if fallback_m not in candidate_models:
+            candidate_models.append(fallback_m)
 
-    prompt = (
-        f"Campus Issue Report to Triage:\n"
-        f"Title: {title}\n"
-        f"Location: {location}\n"
-        f"User-Suggested Category: {user_category or 'Not specified'}\n"
-        f"Detailed Description: {description}\n"
-        f"\n"
-        f"Generate the structured JSON classification adhering to the schema."
-    )
+    last_error = None
+    for model_name in candidate_models:
+        try:
+            logger.info("Attempting Gemini model: %s", model_name)
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    response_mime_type="application/json",
+                    response_schema=GeminiClassification,
+                    temperature=0.2,
+                ),
+            )
 
-    response = client.models.generate_content(
-        model=model_name,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            response_mime_type="application/json",
-            response_schema=GeminiClassification,
-            temperature=0.2,
-        ),
-    )
+            if not response or not response.text:
+                raise ValueError("Gemini returned an empty response.")
 
-    if not response or not response.text:
-        raise ValueError("Gemini returned an empty response.")
+            parsed = GeminiClassification.model_validate_json(response.text)
+            return GeminiClassification(
+                category=parsed.category,
+                priority=parsed.priority,
+                department=parsed.department,
+                explanation=parsed.explanation,
+                recommended_action=parsed.recommended_action,
+                source="gemini",
+            )
+        except Exception as exc:
+            logger.warning("Gemini model %s failed: %s (%s)", model_name, type(exc).__name__, exc)
+            last_error = exc
+            # If error is invalid API key or permission denied, no need to retry other models
+            if "API_KEY_INVALID" in str(exc) or "PERMISSION_DENIED" in str(exc):
+                raise exc
 
-    # Validate output with Pydantic
-    parsed = GeminiClassification.model_validate_json(response.text)
-    # Ensure source is marked as gemini
-    return GeminiClassification(
-        category=parsed.category,
-        priority=parsed.priority,
-        department=parsed.department,
-        explanation=parsed.explanation,
-        recommended_action=parsed.recommended_action,
-        source="gemini",
-    )
+    raise last_error or RuntimeError("All Gemini candidate models failed.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAIN PUBLIC FUNCTION (Automatic fallback on any failure)
+# TIER 2: xAI GROK (First Fallback)
+# ─────────────────────────────────────────────────────────────────────────────
+def classify_with_grok(
+    title: str,
+    description: str,
+    location: str,
+    user_category: Optional[str] = None,
+) -> GeminiClassification:
+    """
+    Calls xAI Grok using the OpenAI-compatible REST API.
+    Endpoint: https://api.x.ai/v1/chat/completions
+    """
+    api_key = os.getenv("XAI_API_KEY", "").strip()
+    model = os.getenv("XAI_MODEL", DEFAULT_GROK_MODEL).strip() or DEFAULT_GROK_MODEL
+
+    prompt = _build_triage_prompt(title, description, location, user_category)
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    SYSTEM_INSTRUCTION
+                    + "\nYou MUST respond with ONLY a valid JSON object matching the keys: "
+                    + "category, priority, department, explanation, recommended_action."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.2,
+    }
+
+    req = urllib.request.Request(
+        "https://api.x.ai/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "GreenCampus-AI/1.3.0",
+        },
+        method="POST",
+    )
+
+    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+        res_data = json.loads(response.read().decode("utf-8"))
+        content = res_data["choices"][0]["message"]["content"]
+        parsed = GeminiClassification.model_validate_json(content)
+        return GeminiClassification(
+            category=parsed.category,
+            priority=parsed.priority,
+            department=parsed.department,
+            explanation=f"[xAI Grok] {parsed.explanation}",
+            recommended_action=parsed.recommended_action,
+            source="grok",
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TIER 3: OPENAI (Second Fallback)
+# ─────────────────────────────────────────────────────────────────────────────
+def classify_with_openai(
+    title: str,
+    description: str,
+    location: str,
+    user_category: Optional[str] = None,
+) -> GeminiClassification:
+    """
+    Calls OpenAI using the standard chat completions REST API.
+    Endpoint: https://api.openai.com/v1/chat/completions
+    """
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    model = os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
+
+    prompt = _build_triage_prompt(title, description, location, user_category)
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    SYSTEM_INSTRUCTION
+                    + "\nYou MUST respond with ONLY a valid JSON object matching the keys: "
+                    + "category, priority, department, explanation, recommended_action."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.2,
+    }
+
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "GreenCampus-AI/1.3.0",
+        },
+        method="POST",
+    )
+
+    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+        res_data = json.loads(response.read().decode("utf-8"))
+        content = res_data["choices"][0]["message"]["content"]
+        parsed = GeminiClassification.model_validate_json(content)
+        return GeminiClassification(
+            category=parsed.category,
+            priority=parsed.priority,
+            department=parsed.department,
+            explanation=f"[OpenAI {model}] {parsed.explanation}",
+            recommended_action=parsed.recommended_action,
+            source="openai",
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN PUBLIC FUNCTION (4-Tier Resilient Failover Pipeline)
 # ─────────────────────────────────────────────────────────────────────────────
 def classify_ticket(
     title: str,
@@ -289,29 +483,56 @@ def classify_ticket(
     user_category: Optional[str] = None,
 ) -> GeminiClassification:
     """
-    Main entry point for classifying a campus issue ticket.
-
-    1. Checks if GEMINI_API_KEY is configured. If not, uses fallback classifier.
-    2. Calls Gemini API using google-genai SDK with structured output schema.
-    3. If any error occurs (network, rate limit, quota, invalid JSON), catches it,
-       logs a descriptive warning, and returns a valid fallback classification.
+    Multi-Tier AI Classification Pipeline:
+      1. Google Gemini (primary provider)
+      2. xAI Grok (first fallback)
+      3. OpenAI (second fallback)
+      4. Deterministic local rule-based fallback (guaranteed resilience)
     """
-    if not is_api_key_configured():
-        logger.info("GEMINI_API_KEY is not configured — using fallback classifier.")
-        return fallback_classify(title, description, location, user_category)
+    fail_reasons = []
 
-    try:
-        logger.info("Classifying campus issue using Gemini AI...")
-        result = classify_with_gemini(title, description, location, user_category)
-        logger.info("Gemini classification successful: %s [%s]", result.category, result.priority)
-        return result
-    except Exception as exc:
-        logger.warning(
-            "Gemini classification failed (%s: %s). Falling back to rule-based classifier.",
-            type(exc).__name__,
-            exc,
-        )
-        fallback = fallback_classify(title, description, location, user_category)
-        # Note the fallback reason in the explanation for transparency
-        fallback.explanation = f"{fallback.explanation} (Fallback activated due to: {type(exc).__name__})"
-        return fallback
+    # ── Tier 1: Google Gemini ──
+    if is_gemini_configured():
+        try:
+            logger.info("Tier 1: Classifying campus issue with Google Gemini...")
+            result = classify_with_gemini(title, description, location, user_category)
+            logger.info("Gemini classification successful: %s [%s]", result.category, result.priority)
+            return result
+        except Exception as exc:
+            logger.warning("Gemini failed (%s: %s). Advancing to Tier 2 (xAI Grok)...", type(exc).__name__, exc)
+            fail_reasons.append(f"Gemini: {type(exc).__name__}")
+    else:
+        logger.info("Gemini not configured — skipping Tier 1.")
+
+    # ── Tier 2: xAI Grok ──
+    if is_xai_configured():
+        try:
+            logger.info("Tier 2: Classifying campus issue with xAI Grok...")
+            result = classify_with_grok(title, description, location, user_category)
+            logger.info("xAI Grok classification successful: %s [%s]", result.category, result.priority)
+            return result
+        except Exception as exc:
+            logger.warning("xAI Grok failed (%s: %s). Advancing to Tier 3 (OpenAI)...", type(exc).__name__, exc)
+            fail_reasons.append(f"Grok: {type(exc).__name__}")
+    else:
+        logger.info("xAI Grok not configured — skipping Tier 2.")
+
+    # ── Tier 3: OpenAI ──
+    if is_openai_configured():
+        try:
+            logger.info("Tier 3: Classifying campus issue with OpenAI...")
+            result = classify_with_openai(title, description, location, user_category)
+            logger.info("OpenAI classification successful: %s [%s]", result.category, result.priority)
+            return result
+        except Exception as exc:
+            logger.warning("OpenAI failed (%s: %s). Advancing to Tier 4 (Rule Fallback)...", type(exc).__name__, exc)
+            fail_reasons.append(f"OpenAI: {type(exc).__name__}")
+    else:
+        logger.info("OpenAI not configured — skipping Tier 3.")
+
+    # ── Tier 4: Guaranteed Rule-Based Fallback ──
+    logger.info("Tier 4: Using deterministic local rule-based classifier.")
+    fallback = fallback_classify(title, description, location, user_category)
+    if fail_reasons:
+        fallback.explanation = f"{fallback.explanation} (Fallback activated after: {', '.join(fail_reasons)})"
+    return fallback

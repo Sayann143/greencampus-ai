@@ -136,6 +136,86 @@ class TestGreenCampusAI(unittest.TestCase):
             self.assertIn("explanation", data)
             self.assertIn("recommended_action", data)
 
+    def test_06_failover_gemini_to_grok(self):
+        """Simulate Gemini failure and verify fallback to xAI Grok."""
+        from unittest.mock import patch
+
+        grok_mock_result = GeminiClassification(
+            category="Water & Plumbing",
+            priority="High",
+            department="Facilities (Plumbing)",
+            explanation="[xAI Grok] Water pipe burst verified.",
+            recommended_action="Shut off valve and dispatch technician.",
+            source="grok",
+        )
+
+        with patch("ai_service.is_gemini_configured", return_value=True), \
+             patch("ai_service.classify_with_gemini", side_effect=RuntimeError("Gemini Quota Exceeded")), \
+             patch("ai_service.is_xai_configured", return_value=True), \
+             patch("ai_service.classify_with_grok", return_value=grok_mock_result) as mock_grok:
+
+            result = classify_ticket(
+                title=self.sample_water_leak["title"],
+                description=self.sample_water_leak["description"],
+                location=self.sample_water_leak["location"],
+            )
+
+            mock_grok.assert_called_once()
+            self.assertEqual(result.source, "grok")
+            self.assertEqual(result.category, "Water & Plumbing")
+
+    def test_07_failover_grok_to_openai(self):
+        """Simulate Gemini and Grok failure and verify fallback to OpenAI."""
+        from unittest.mock import patch
+
+        openai_mock_result = GeminiClassification(
+            category="Water & Plumbing",
+            priority="High",
+            department="Plumbing Maintenance",
+            explanation="[OpenAI gpt-4o-mini] Ceiling pipe leak detected.",
+            recommended_action="Place caution signs and inspect joint.",
+            source="openai",
+        )
+
+        with patch("ai_service.is_gemini_configured", return_value=True), \
+             patch("ai_service.classify_with_gemini", side_effect=RuntimeError("Gemini Timeout")), \
+             patch("ai_service.is_xai_configured", return_value=True), \
+             patch("ai_service.classify_with_grok", side_effect=RuntimeError("xAI Rate Limited")), \
+             patch("ai_service.is_openai_configured", return_value=True), \
+             patch("ai_service.classify_with_openai", return_value=openai_mock_result) as mock_openai:
+
+            result = classify_ticket(
+                title=self.sample_water_leak["title"],
+                description=self.sample_water_leak["description"],
+                location=self.sample_water_leak["location"],
+            )
+
+            mock_openai.assert_called_once()
+            self.assertEqual(result.source, "openai")
+            self.assertEqual(result.category, "Water & Plumbing")
+
+    def test_08_failover_all_ai_to_rule_fallback(self):
+        """Simulate total AI outage and verify guaranteed rule-based fallback."""
+        from unittest.mock import patch
+
+        with patch("ai_service.is_gemini_configured", return_value=True), \
+             patch("ai_service.classify_with_gemini", side_effect=RuntimeError("Gemini Outage")), \
+             patch("ai_service.is_xai_configured", return_value=True), \
+             patch("ai_service.classify_with_grok", side_effect=RuntimeError("Grok Outage")), \
+             patch("ai_service.is_openai_configured", return_value=True), \
+             patch("ai_service.classify_with_openai", side_effect=RuntimeError("OpenAI Outage")):
+
+            result = classify_ticket(
+                title=self.sample_water_leak["title"],
+                description=self.sample_water_leak["description"],
+                location=self.sample_water_leak["location"],
+            )
+
+            self.assertEqual(result.source, "fallback")
+            self.assertEqual(result.category, "Water & Plumbing")
+            self.assertEqual(result.priority, "High")
+            self.assertIn("Fallback activated after", result.explanation)
+
 
 if __name__ == "__main__":
     print(f"Running Stage 3 tests (API Key Configured: {is_api_key_configured()})...")

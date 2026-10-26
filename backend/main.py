@@ -102,15 +102,26 @@ def fetch_profile_by_id(conn, pid: int) -> Optional[StudentProfileOut]:
 # ── Lifespan: runs on startup (and cleanup on shutdown) ───────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 GreenCampus AI backend starting...")
+    import os
+    from ai_service import get_ai_providers_status
+    from database import get_db_info
+
+    print("🚀 GreenCampus AI backend starting v1.3.0...")
     create_tables()
-    print("  ✅ Database tables ready.")
+    print("  ✅ Database tables verified.")
     seed_database()
-    print("  ✅ Startup complete.")
-    if is_api_key_configured():
-        print("  🤖 Gemini AI key detected — online classification active.")
-    else:
-        print("  ℹ️  No Gemini API key set — clearly labelled fallback classifier active.")
+    print("  ✅ Initial seed checked.")
+
+    db_info = get_db_info()
+    print(f"  💾 Database: {db_info['type'].upper()} ({'Persistent' if db_info['persistent'] else 'Ephemeral'})")
+
+    ai_info = get_ai_providers_status()
+    print(f"  🤖 Active Primary AI: {ai_info['active_primary'].upper()}")
+    print(f"     • Gemini:   {'Configured' if ai_info['gemini']['configured'] else 'Not set'} ({ai_info['gemini']['model']})")
+    print(f"     • xAI Grok: {'Configured' if ai_info['grok']['configured'] else 'Not set'} ({ai_info['grok']['model']})")
+    print(f"     • OpenAI:   {'Configured' if ai_info['openai']['configured'] else 'Not set'} ({ai_info['openai']['model']})")
+    print(f"     • Fallback: Always Active (deterministic local rules)")
+
     yield
     print("🛑 GreenCampus AI backend shutting down.")
 
@@ -120,25 +131,36 @@ app = FastAPI(
     title="GreenCampus AI API",
     description=(
         "Backend for GreenCampus AI — Smart campus issue reporting with "
-        "Gemini AI classification, persistent SQLite database, and Campus Connect."
+        "resilient multi-tier AI failover (Gemini -> Grok -> OpenAI -> Rule-based), "
+        "persistent database, and Campus Connect."
     ),
     version="1.3.0",
     lifespan=lifespan,
 )
 
 # ── CORS (Cross-Origin Resource Sharing) ──────────────────────────────────────
-# Allows requests from our React + Vite frontend at port 5173
+# Allows requests from Vite local dev and any verified Vercel production/preview domain
+import os
+
 _ALLOWED_ORIGINS = [
     "http://localhost:5173",
-    "https://greencampus-c3vencflt-sayan-d154.vercel.app",
     "https://greencampus-ai-pi.vercel.app",
+    "https://greencampus-c3vencflt-sayan-d154.vercel.app",
     "https://greencampus-jnelhrj5q-sayan-d154.vercel.app",
     "https://greencampus-7rqwg8pzl-sayan-d154.vercel.app",
 ]
 
+# Allow custom domain or frontend URL from environment variable
+_extra_env_origins = os.getenv("ALLOWED_ORIGINS", os.getenv("FRONTEND_URL", "")).split(",")
+for _orig in _extra_env_origins:
+    _clean_orig = _orig.strip()
+    if _clean_orig and _clean_orig not in _ALLOWED_ORIGINS:
+        _ALLOWED_ORIGINS.append(_clean_orig)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
+    allow_origin_regex=r"^https://[a-zA-Z0-9_\-]+\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -151,12 +173,19 @@ app.add_middleware(
 
 @app.get("/api/health", tags=["System"])
 def health_check():
-    """Simple alive check. Returns 200 OK and AI status."""
-    ai_status = "gemini" if is_api_key_configured() else "fallback"
+    """Health alive check returning multi-tier AI status and database persistence."""
+    from ai_service import get_ai_providers_status
+    from database import get_db_info
+
+    ai_status = get_ai_providers_status()
+    db_info = get_db_info()
+
     return {
         "status": "ok",
         "message": "GreenCampus AI backend is running 🌿",
-        "ai_engine": ai_status,
+        "ai_engine": ai_status["active_primary"],
+        "ai_providers": ai_status,
+        "database": db_info,
     }
 
 

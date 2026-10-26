@@ -4,10 +4,34 @@
  * Connects React to the FastAPI backend running at http://localhost:8000.
  */
 
-const API_BASE = (
+const rawBase = (
   import.meta.env.VITE_API_BASE_URL ||
   'https://greencampus-ai-tfjl.onrender.com'
-).replace(/\/+$/, '') + '/api';
+).trim().replace(/\/+$/, '');
+
+const API_BASE = rawBase.endsWith('/api') ? rawBase : `${rawBase}/api`;
+
+/**
+ * Fetch with bounded timeout (15s) to gracefully handle cold starts
+ */
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeoutMs / 1000}s. The backend server may be waking up.`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(id);
+  }
+}
 
 // =============================================================================
 // GREENCAMPUS AI: ISSUE TICKETING
@@ -17,7 +41,7 @@ const API_BASE = (
  * Fetch health status of the backend
  */
 export async function fetchHealth() {
-  const response = await fetch(`${API_BASE}/health`);
+  const response = await fetchWithTimeout(`${API_BASE}/health`);
   if (!response.ok) {
     throw new Error(`Health check failed with status ${response.status}`);
   }
@@ -32,7 +56,7 @@ export async function fetchTickets(status = null) {
     ? `${API_BASE}/tickets?status=${encodeURIComponent(status)}`
     : `${API_BASE}/tickets`;
 
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Failed to load tickets (${response.status}): ${errorText}`);
@@ -44,7 +68,7 @@ export async function fetchTickets(status = null) {
  * Fetch dashboard summary aggregate counts
  */
 export async function fetchDashboardSummary() {
-  const response = await fetch(`${API_BASE}/dashboard/summary`);
+  const response = await fetchWithTimeout(`${API_BASE}/dashboard/summary`);
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Failed to load dashboard summary (${response.status}): ${errorText}`);
@@ -56,13 +80,13 @@ export async function fetchDashboardSummary() {
  * Create a new ticket (automatically classified by AI on the backend)
  */
 export async function createTicket(ticketData) {
-  const response = await fetch(`${API_BASE}/tickets`, {
+  const response = await fetchWithTimeout(`${API_BASE}/tickets`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(ticketData),
-  });
+  }, 25000); // 25s timeout for AI classification
 
   if (!response.ok) {
     let errorMessage = `Server error (${response.status})`;
@@ -88,7 +112,7 @@ export async function createTicket(ticketData) {
  * Update the status of a specific ticket ('Open' | 'In Progress' | 'Resolved')
  */
 export async function updateTicketStatus(ticketId, status) {
-  const response = await fetch(`${API_BASE}/tickets/${ticketId}/status`, {
+  const response = await fetchWithTimeout(`${API_BASE}/tickets/${ticketId}/status`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -125,7 +149,7 @@ export async function fetchActiveStudents(activity = null, interest = null, loca
   if (locationArea && locationArea !== 'All Areas') params.append('location_area', locationArea);
 
   const queryStr = params.toString() ? `?${params.toString()}` : '';
-  const response = await fetch(`${API_BASE}/connect/available${queryStr}`);
+  const response = await fetchWithTimeout(`${API_BASE}/connect/available${queryStr}`);
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Failed to load active students (${response.status}): ${errorText}`);
@@ -137,7 +161,7 @@ export async function fetchActiveStudents(activity = null, interest = null, loca
  * List all registered student profiles
  */
 export async function fetchProfiles() {
-  const response = await fetch(`${API_BASE}/connect/profiles`);
+  const response = await fetchWithTimeout(`${API_BASE}/connect/profiles`);
   if (!response.ok) {
     throw new Error(`Failed to load student profiles (${response.status})`);
   }
@@ -148,7 +172,7 @@ export async function fetchProfiles() {
  * Get profile details and active broadcast for a specific profile ID
  */
 export async function fetchStudentProfile(profileId) {
-  const response = await fetch(`${API_BASE}/connect/profiles/${profileId}`);
+  const response = await fetchWithTimeout(`${API_BASE}/connect/profiles/${profileId}`);
   if (!response.ok) {
     throw new Error(`Failed to load profile for ID ${profileId}`);
   }
@@ -159,7 +183,7 @@ export async function fetchStudentProfile(profileId) {
  * Create a new student profile
  */
 export async function createStudentProfile(profileData) {
-  const response = await fetch(`${API_BASE}/connect/profiles`, {
+  const response = await fetchWithTimeout(`${API_BASE}/connect/profiles`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -191,7 +215,7 @@ export async function createStudentProfile(profileData) {
  * Broadcast student availability for 15, 30, or 60 mins
  */
 export async function broadcastAvailability(availabilityData) {
-  const response = await fetch(`${API_BASE}/connect/availability`, {
+  const response = await fetchWithTimeout(`${API_BASE}/connect/availability`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -223,7 +247,7 @@ export async function broadcastAvailability(availabilityData) {
  * Cancel/stop broadcasting availability for a profile
  */
 export async function cancelAvailability(profileId) {
-  const response = await fetch(`${API_BASE}/connect/availability/${profileId}/cancel`, {
+  const response = await fetchWithTimeout(`${API_BASE}/connect/availability/${profileId}/cancel`, {
     method: 'POST',
   });
 
@@ -243,7 +267,7 @@ export async function cancelAvailability(profileId) {
  * Send a connection request to another student
  */
 export async function sendConnectionRequest(senderId, receiverId, message = '') {
-  const response = await fetch(`${API_BASE}/connect/requests`, {
+  const response = await fetchWithTimeout(`${API_BASE}/connect/requests`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -273,7 +297,7 @@ export async function sendConnectionRequest(senderId, receiverId, message = '') 
  * Fetch incoming pending requests received by a student
  */
 export async function fetchPendingReceivedRequests(profileId) {
-  const response = await fetch(`${API_BASE}/connect/requests/pending?profile_id=${profileId}`);
+  const response = await fetchWithTimeout(`${API_BASE}/connect/requests/pending?profile_id=${profileId}`);
   if (!response.ok) {
     throw new Error(`Failed to load received requests (${response.status})`);
   }
@@ -284,7 +308,7 @@ export async function fetchPendingReceivedRequests(profileId) {
  * Fetch outgoing pending requests sent by a student
  */
 export async function fetchPendingSentRequests(profileId) {
-  const response = await fetch(`${API_BASE}/connect/requests/sent?profile_id=${profileId}`);
+  const response = await fetchWithTimeout(`${API_BASE}/connect/requests/sent?profile_id=${profileId}`);
   if (!response.ok) {
     throw new Error(`Failed to load sent requests (${response.status})`);
   }
@@ -295,7 +319,7 @@ export async function fetchPendingSentRequests(profileId) {
  * Respond to an incoming connection request (ACCEPT or REJECT)
  */
 export async function respondToConnectionRequest(requestId, action, profileId) {
-  const response = await fetch(`${API_BASE}/connect/requests/${requestId}`, {
+  const response = await fetchWithTimeout(`${API_BASE}/connect/requests/${requestId}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -324,7 +348,7 @@ export async function respondToConnectionRequest(requestId, action, profileId) {
  * Fetch mutual accepted connections for a student
  */
 export async function fetchMyConnections(profileId) {
-  const response = await fetch(`${API_BASE}/connect/connections?profile_id=${profileId}`);
+  const response = await fetchWithTimeout(`${API_BASE}/connect/connections?profile_id=${profileId}`);
   if (!response.ok) {
     throw new Error(`Failed to load connections (${response.status})`);
   }
@@ -335,7 +359,7 @@ export async function fetchMyConnections(profileId) {
  * Fetch status map for all students relative to current profile
  */
 export async function fetchConnectionStatusMap(profileId) {
-  const response = await fetch(`${API_BASE}/connect/requests/status-map?profile_id=${profileId}`);
+  const response = await fetchWithTimeout(`${API_BASE}/connect/requests/status-map?profile_id=${profileId}`);
   if (!response.ok) {
     throw new Error(`Failed to load connection status map (${response.status})`);
   }
