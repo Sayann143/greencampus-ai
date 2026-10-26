@@ -272,3 +272,26 @@ class ConnectionOut(BaseModel):
     connection_id:   int
     peer_profile:    StudentProfileOut
     connected_since: str
+
+
+# =============================================================================
+# CAMPUS AI CHAT ASSISTANT
+# =============================================================================
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant", "system"]
+    content: str
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=1500, description="User's message")
+    history: list[ChatMessage] = Field(default_factory=list, description="Recent chat history")
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    model_used: str
+    provider: str
+    timestamp: str
+    suggested_actions: list[str] = Field(default_factory=list)
+

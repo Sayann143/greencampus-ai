@@ -216,6 +216,22 @@ class TestGreenCampusAI(unittest.TestCase):
             self.assertEqual(result.priority, "High")
             self.assertIn("Fallback activated after", result.explanation)
 
+    def test_09_chat_endpoint_interactive(self):
+        """Test POST /api/chat interactive conversational assistant endpoint."""
+        with TestClient(app) as client:
+            res = client.post("/api/chat", json={
+                "message": "Where can I report a broken chair or water leak?",
+                "history": []
+            })
+            self.assertEqual(res.status_code, 200)
+            data = res.json()
+            self.assertIn("reply", data)
+            self.assertTrue(len(data["reply"]) > 10)
+            self.assertIn("provider", data)
+            self.assertIn("model_used", data)
+            self.assertIn("timestamp", data)
+            self.assertIsInstance(data["suggested_actions"], list)
+
 
 if __name__ == "__main__":
     print(f"Running Stage 3 tests (API Key Configured: {is_api_key_configured()})...")

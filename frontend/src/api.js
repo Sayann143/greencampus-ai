@@ -365,3 +365,41 @@ export async function fetchConnectionStatusMap(profileId) {
   }
   return response.json();
 }
+
+// =============================================================================
+// CAMPUS AI CONVERSATIONAL ASSISTANT (ECHO)
+// =============================================================================
+
+/**
+ * Send message to Campus AI Assistant with rate-limit failover
+ */
+export async function sendChatMessage(message, history = []) {
+  const response = await fetchWithTimeout(
+    `${API_BASE}/chat`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ message, history }),
+    },
+    25000
+  );
+
+  if (!response.ok) {
+    let errorMessage = `AI Assistant is temporarily unavailable (${response.status})`;
+    try {
+      const errorJson = await response.json();
+      if (errorJson.detail) {
+        errorMessage = Array.isArray(errorJson.detail)
+          ? errorJson.detail.map((e) => e.msg).join(', ')
+          : errorJson.detail;
+      }
+    } catch {
+      // Fallback
+    }
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+}

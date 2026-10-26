@@ -54,9 +54,11 @@ from models import (
     ConnectionRequestAction,
     ConnectionRequestOut,
     ConnectionOut,
+    ChatRequest,
+    ChatResponse,
 )
 from seed import seed_database
-from ai_service import classify_ticket, is_api_key_configured
+from ai_service import classify_ticket, is_api_key_configured, generate_chat_reply
 
 
 # ── Helpers for Campus Connect ────────────────────────────────────────────────
@@ -284,6 +286,20 @@ def classify_issue_preview(request: AIClassifyRequest):
         location=request.location,
         user_category=request.category,
     )
+
+
+@app.post("/api/chat", response_model=ChatResponse, tags=["AI Assistant"])
+def chat_with_campus_assistant(body: ChatRequest):
+    """
+    Live conversational AI Assistant for GreenCampus AI (Echo).
+    Supported by 4-tier error-handling fallback:
+      1. Primary Free Gemini (gemini-2.5-flash / gemini-3.5)
+      2. Secondary Free Gemini models (gemini-2.0-flash, gemini-1.5-flash, etc.)
+      3. xAI Grok (grok-2-latest)
+      4. OpenAI (gpt-4o-mini)
+      5. Guaranteed local campus knowledge base
+    """
+    return generate_chat_reply(message=body.message, history=body.history)
 
 
 @app.patch("/api/tickets/{ticket_id}/status", response_model=TicketOut, tags=["Tickets"])

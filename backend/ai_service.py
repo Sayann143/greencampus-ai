@@ -1,17 +1,19 @@
 """
-ai_service.py — Resilient Multi-Tier AI Classification Service with Automatic Failover.
+ai_service.py — Resilient Multi-Tier AI Classification & Chat Service with Full Rate-Limit Fallback.
 
-Architecture:
-  Tier 1 (Primary):      Google Gemini (official google-genai SDK, model fallback)
-  Tier 2 (Fallback 1):   xAI Grok (chat completions REST API, bounded timeout)
-  Tier 3 (Fallback 2):   OpenAI (chat completions REST API, bounded timeout)
-  Tier 4 (Guaranteed):   Deterministic local rule-based classifier (zero network dependencies)
+Fallback Architecture:
+  1. Primary Free Gemini Model (configurable via GEMINI_MODEL / GEMINI_PRIMARY_MODEL, e.g. gemini-2.5-flash)
+  2. Sequential Secondary Free Gemini Models:
+     gemini-2.5-flash -> gemini-2.0-flash -> gemini-2.0-flash-lite -> gemini-1.5-flash -> gemini-1.5-flash-8b
+  3. xAI Grok (grok-2-latest / grok-beta) via REST API
+  4. OpenAI (gpt-4o-mini) via REST API
+  5. Deterministic Local Campus Engine (Zero external dependencies, always available)
 
-Strict Safety Guidelines:
-  - Output is strictly validated against GeminiClassification Pydantic schema.
-  - Never claims an issue has been resolved.
-  - Never claims maintenance staff or contractors have arrived or been contacted.
-  - Keeps all API keys strictly on the server; never logs or leaks them.
+Features:
+  - Ticket Classification (classify_ticket)
+  - Interactive Conversational Campus Assistant (generate_chat_reply)
+  - Full Error & Quota Handling (429 RateLimit, ResourceExhausted, 503 Overloaded, Timeouts)
+  - Strict Safety Guidelines: Never falsely claims issues are resolved or staff dispatched.
 """
 
 import os
@@ -20,11 +22,18 @@ import json
 import logging
 import urllib.request
 import urllib.error
+from datetime import datetime
 from typing import Optional
 from pathlib import Path
 from dotenv import load_dotenv
 
-from models import GeminiClassification, AICategoryType, PriorityType
+from models import (
+    GeminiClassification,
+    AICategoryType,
+    PriorityType,
+    ChatMessage,
+    ChatResponse,
+)
 
 # Configure logger
 logger = logging.getLogger("greencampus.ai")
@@ -34,12 +43,26 @@ logging.basicConfig(level=logging.INFO)
 ENV_PATH = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
 
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
-DEFAULT_GROK_MODEL = "grok-2-latest"
-DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_PRIMARY_GEMINI = os.getenv("GEMINI_PRIMARY_MODEL", os.getenv("GEMINI_MODEL", "gemini-2.5-flash")).strip()
+DEFAULT_GROK_MODEL = os.getenv("XAI_MODEL", "grok-2-latest").strip()
+DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 REQUEST_TIMEOUT_SECONDS = 12
 
-SYSTEM_INSTRUCTION = (
+# Sequential free Gemini models to cycle through if primary hits limits or errors
+FREE_GEMINI_FALLBACK_MODELS = [
+    DEFAULT_PRIMARY_GEMINI,
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
+]
+
+# De-duplicate while preserving order
+_seen = set()
+CANDIDATE_GEMINI_MODELS = [m for m in FREE_GEMINI_FALLBACK_MODELS if not (m in _seen or _seen.add(m))]
+
+SYSTEM_INSTRUCTION_TRIAGE = (
     "You are the expert campus facility and operations triage assistant for GreenCampus AI.\n"
     "Your task is to analyze campus issue reports submitted by students and staff, and categorize them accurately.\n"
     "\n"
@@ -63,6 +86,18 @@ SYSTEM_INSTRUCTION = (
     "4. Provide a clear, factual 'explanation' (1-2 sentences) of the root concern and priority rationale."
 )
 
+SYSTEM_INSTRUCTION_CHAT = (
+    "You are 'Echo', the vibrant, friendly, super-smart Gen Z Campus AI Assistant for GreenCampus AI.\n"
+    "Your mission: Help university students & staff navigate campus life, report facility issues, discover sustainability tips, and find peers.\n"
+    "\n"
+    "Tone & Style Guidelines:\n"
+    "1. Keep it modern, engaging, punchy, and upbeat with relevant emojis (✨, 🌿, 💡, ☕, ⚡).\n"
+    "2. Be genuinely helpful and empathetic without corporate fluff or boomer vibes.\n"
+    "3. When students describe a campus problem (e.g. leak, broken AC, trash), encourage them to file a quick report in the 'Report Issue' tab so maintenance can track it.\n"
+    "4. When students want to study, hang out, or meet people, highlight the 'Campus Connect' tab.\n"
+    "5. STRICT SAFETY: Never falsely state that a facility issue has been repaired or that staff have already arrived. Keep reports realistic and factual."
+)
+
 
 def _is_valid_key(key: Optional[str]) -> bool:
     """Helper to verify a non-empty, non-placeholder API key."""
@@ -79,48 +114,46 @@ def _is_valid_key(key: Optional[str]) -> bool:
 
 
 def is_gemini_configured() -> bool:
-    """Returns True if a real Gemini API key is configured."""
     return _is_valid_key(os.getenv("GEMINI_API_KEY"))
 
 
 def is_xai_configured() -> bool:
-    """Returns True if a real xAI Grok API key is configured."""
     return _is_valid_key(os.getenv("XAI_API_KEY"))
 
 
 def is_openai_configured() -> bool:
-    """Returns True if a real OpenAI API key is configured."""
     return _is_valid_key(os.getenv("OPENAI_API_KEY"))
 
 
 def is_api_key_configured() -> bool:
-    """Maintains backward compatibility with main.py and health check."""
     return is_gemini_configured() or is_xai_configured() or is_openai_configured()
 
 
 def get_ai_providers_status() -> dict:
-    """Returns detailed status of all 4 AI tiers for /api/health."""
+    """Returns detailed status of all AI tiers for /api/health."""
     active_primary = "rule_based_fallback"
     if is_gemini_configured():
-        active_primary = "gemini"
+        active_primary = f"gemini ({DEFAULT_PRIMARY_GEMINI})"
     elif is_xai_configured():
-        active_primary = "grok"
+        active_primary = f"grok ({DEFAULT_GROK_MODEL})"
     elif is_openai_configured():
-        active_primary = "openai"
+        active_primary = f"openai ({DEFAULT_OPENAI_MODEL})"
 
     return {
         "active_primary": active_primary,
         "gemini": {
             "configured": is_gemini_configured(),
-            "model": os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
+            "model": DEFAULT_PRIMARY_GEMINI,
+            "primary_model": DEFAULT_PRIMARY_GEMINI,
+            "fallback_models": CANDIDATE_GEMINI_MODELS,
         },
         "grok": {
             "configured": is_xai_configured(),
-            "model": os.getenv("XAI_MODEL", DEFAULT_GROK_MODEL),
+            "model": DEFAULT_GROK_MODEL,
         },
         "openai": {
             "configured": is_openai_configured(),
-            "model": os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
+            "model": DEFAULT_OPENAI_MODEL,
         },
         "rule_based_fallback": {
             "configured": True,
@@ -135,7 +168,6 @@ def _build_triage_prompt(
     location: str,
     user_category: Optional[str] = None,
 ) -> str:
-    """Formats the ticket details into a concise prompt for LLM providers."""
     return (
         f"Campus Issue Report to Triage:\n"
         f"Title: {title}\n"
@@ -157,10 +189,7 @@ def fallback_classify(
     location: str,
     user_category: Optional[str] = None,
 ) -> GeminiClassification:
-    """
-    Guaranteed zero-dependency keyword classifier.
-    Runs locally with zero external network dependencies.
-    """
+    """Guaranteed zero-dependency keyword classifier."""
     combined_text = f"{title} {description} {location} {user_category or ''}".lower()
 
     water_keywords = [
@@ -203,7 +232,7 @@ def fallback_classify(
             )
             action = "Locate and isolate the nearest section shut-off valve, cordon off wet flooring with caution cones, and schedule plumbing technician inspection."
         else:
-            priority: PriorityType = "Medium"
+            priority = "Medium"
             explanation = (
                 "[Fallback Classifier] Plumbing fixture malfunction reported. Causes continuous water waste "
                 "and campus facility degradation if unaddressed."
@@ -291,7 +320,7 @@ def fallback_classify(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TIER 1: GOOGLE GEMINI (Primary Provider)
+# TIER 1: GOOGLE GEMINI (Sequential Free Models Cycle)
 # ─────────────────────────────────────────────────────────────────────────────
 def classify_with_gemini(
     title: str,
@@ -301,32 +330,25 @@ def classify_with_gemini(
 ) -> GeminiClassification:
     """
     Calls Google Gemini using the official google-genai SDK.
-    Tries configured model first, falling back to gemini-2.0-flash / gemini-1.5-flash if model name is unrecognized.
+    Tries the primary free model, and automatically cycles through other free models
+    if rate limit (429), quota exhaustion, or model availability errors occur.
     """
     from google import genai
     from google.genai import types
 
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    configured_model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
-
     client = genai.Client(api_key=api_key)
     prompt = _build_triage_prompt(title, description, location, user_category)
 
-    # Models to try in order
-    candidate_models = [configured_model]
-    for fallback_m in ["gemini-2.0-flash", "gemini-1.5-flash"]:
-        if fallback_m not in candidate_models:
-            candidate_models.append(fallback_m)
-
     last_error = None
-    for model_name in candidate_models:
+    for model_name in CANDIDATE_GEMINI_MODELS:
         try:
-            logger.info("Attempting Gemini model: %s", model_name)
+            logger.info("Attempting Gemini model triage: %s", model_name)
             response = client.models.generate_content(
                 model=model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
+                    system_instruction=SYSTEM_INSTRUCTION_TRIAGE,
                     response_mime_type="application/json",
                     response_schema=GeminiClassification,
                     temperature=0.2,
@@ -346,17 +368,22 @@ def classify_with_gemini(
                 source="gemini",
             )
         except Exception as exc:
-            logger.warning("Gemini model %s failed: %s (%s)", model_name, type(exc).__name__, exc)
+            logger.warning(
+                "Gemini model '%s' limit/error (%s: %s). Checking next free model...",
+                model_name,
+                type(exc).__name__,
+                exc,
+            )
             last_error = exc
-            # If error is invalid API key or permission denied, no need to retry other models
+            # If invalid API key, no point cycling models
             if "API_KEY_INVALID" in str(exc) or "PERMISSION_DENIED" in str(exc):
                 raise exc
 
-    raise last_error or RuntimeError("All Gemini candidate models failed.")
+    raise last_error or RuntimeError("All candidate free Gemini models failed.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TIER 2: xAI GROK (First Fallback)
+# TIER 2: xAI GROK (First Provider Fallback)
 # ─────────────────────────────────────────────────────────────────────────────
 def classify_with_grok(
     title: str,
@@ -364,10 +391,7 @@ def classify_with_grok(
     location: str,
     user_category: Optional[str] = None,
 ) -> GeminiClassification:
-    """
-    Calls xAI Grok using the OpenAI-compatible REST API.
-    Endpoint: https://api.x.ai/v1/chat/completions
-    """
+    """Calls xAI Grok using OpenAI-compatible REST API."""
     api_key = os.getenv("XAI_API_KEY", "").strip()
     model = os.getenv("XAI_MODEL", DEFAULT_GROK_MODEL).strip() or DEFAULT_GROK_MODEL
 
@@ -378,7 +402,7 @@ def classify_with_grok(
             {
                 "role": "system",
                 "content": (
-                    SYSTEM_INSTRUCTION
+                    SYSTEM_INSTRUCTION_TRIAGE
                     + "\nYou MUST respond with ONLY a valid JSON object matching the keys: "
                     + "category, priority, department, explanation, recommended_action."
                 ),
@@ -415,7 +439,7 @@ def classify_with_grok(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TIER 3: OPENAI (Second Fallback)
+# TIER 3: OPENAI (Second Provider Fallback)
 # ─────────────────────────────────────────────────────────────────────────────
 def classify_with_openai(
     title: str,
@@ -423,10 +447,7 @@ def classify_with_openai(
     location: str,
     user_category: Optional[str] = None,
 ) -> GeminiClassification:
-    """
-    Calls OpenAI using the standard chat completions REST API.
-    Endpoint: https://api.openai.com/v1/chat/completions
-    """
+    """Calls OpenAI using chat completions REST API."""
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     model = os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
 
@@ -437,7 +458,7 @@ def classify_with_openai(
             {
                 "role": "system",
                 "content": (
-                    SYSTEM_INSTRUCTION
+                    SYSTEM_INSTRUCTION_TRIAGE
                     + "\nYou MUST respond with ONLY a valid JSON object matching the keys: "
                     + "category, priority, department, explanation, recommended_action."
                 ),
@@ -474,7 +495,7 @@ def classify_with_openai(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAIN PUBLIC FUNCTION (4-Tier Resilient Failover Pipeline)
+# MAIN PUBLIC FUNCTION: TICKET CLASSIFICATION
 # ─────────────────────────────────────────────────────────────────────────────
 def classify_ticket(
     title: str,
@@ -484,22 +505,22 @@ def classify_ticket(
 ) -> GeminiClassification:
     """
     Multi-Tier AI Classification Pipeline:
-      1. Google Gemini (primary provider)
-      2. xAI Grok (first fallback)
-      3. OpenAI (second fallback)
+      1. Free Google Gemini Models (Primary + Free Fallbacks)
+      2. xAI Grok (first provider fallback)
+      3. OpenAI (second provider fallback)
       4. Deterministic local rule-based fallback (guaranteed resilience)
     """
     fail_reasons = []
 
-    # ── Tier 1: Google Gemini ──
+    # ── Tier 1: Free Gemini Models ──
     if is_gemini_configured():
         try:
-            logger.info("Tier 1: Classifying campus issue with Google Gemini...")
+            logger.info("Tier 1: Classifying campus issue with Google Gemini free tier...")
             result = classify_with_gemini(title, description, location, user_category)
             logger.info("Gemini classification successful: %s [%s]", result.category, result.priority)
             return result
         except Exception as exc:
-            logger.warning("Gemini failed (%s: %s). Advancing to Tier 2 (xAI Grok)...", type(exc).__name__, exc)
+            logger.warning("All Gemini candidate models hit limits or failed (%s: %s). Advancing to Tier 2 (xAI Grok)...", type(exc).__name__, exc)
             fail_reasons.append(f"Gemini: {type(exc).__name__}")
     else:
         logger.info("Gemini not configured — skipping Tier 1.")
@@ -536,3 +557,221 @@ def classify_ticket(
     if fail_reasons:
         fallback.explanation = f"{fallback.explanation} (Fallback activated after: {', '.join(fail_reasons)})"
     return fallback
+
+
+# =============================================================================
+# CONVERSATIONAL CHATBOT (Echo — Gen Z GreenCampus AI Assistant)
+# =============================================================================
+
+def _campus_knowledge_fallback(message: str) -> ChatResponse:
+    """Intelligent local campus knowledge responder when external APIs hit limits."""
+    text = message.lower()
+    timestamp = datetime.now().strftime("%I:%M %p")
+
+    if any(w in text for w in ["leak", "water", "pipe", "tap", "flood", "drain"]):
+        reply = (
+            "💧 **Water or Plumbing Issue Detected!**\n\n"
+            "If there is active flooding or a ceiling leak, please stay clear of wet floors to avoid slips! "
+            "Head over to the **Report Issue** tab right now and submit a report — our AI will tag it as "
+            "High priority for the Facilities team. 🛠️"
+        )
+        actions = ["Report Water Leak 💧", "View Open Tickets 📊", "Campus Safety Numbers ☎️"]
+
+    elif any(w in text for w in ["ac", "air condition", "cooler", "light", "power", "spark", "electric", "switch"]):
+        reply = (
+            "⚡ **Electrical or HVAC Problem!**\n\n"
+            "Safety first: never touch exposed wires or sparking sockets! You can submit an issue report with "
+            "the room number, and our system will route it directly to Electrical Maintenance. 💡"
+        )
+        actions = ["Report Electrical Fault ⚡", "Check Dashboard Status 📊"]
+
+    elif any(w in text for w in ["trash", "dustbin", "clean", "dirty", "smell", "garbage", "waste"]):
+        reply = (
+            "🧹 **Cleanliness & Sanitation Alert!**\n\n"
+            "Nobody likes overflowing bins or messy halls. Drop a report with the exact location (e.g., Cafeteria or Block B) "
+            "so Housekeeping can schedule an extra cleaning round! 🌿"
+        )
+        actions = ["Report Cleanliness Issue 🧹", "View Cafeteria Tickets 🍽️"]
+
+    elif any(w in text for w in ["friend", "study", "meet", "coffee", "connect", "bored", "chat", "peer"]):
+        reply = (
+            "🤝 **Looking to connect with fellow students?**\n\n"
+            "Check out our **Campus Connect** tab! You can broadcast your availability for 15, 30, or 60 mins "
+            "for STUDY, COFFEE, or CASUAL_CHAT, or discover who is free right now across campus areas. No awkward DMs! ✨"
+        )
+        actions = ["Open Campus Connect 🤝", "Broadcast Availability ⏱️"]
+
+    elif any(w in text for w in ["recycle", "plastic", "green", "sustainable", "solar", "eco"]):
+        reply = (
+            "🌱 **Green Campus Pro-Tips:**\n\n"
+            "• Bring your own reusable mug to the Cafeteria to save ~15 disposable cups a week.\n"
+            "• Switch off PC monitors in the computer labs before leaving.\n"
+            "• Drop e-waste at the SAC Tech recycling bin!\n\n"
+            "Small habits make a huge campus difference! 💚"
+        )
+        actions = ["Campus Green Map 🗺️", "Report Energy Waste 💡"]
+
+    else:
+        reply = (
+            "Hey there! 🌿 I'm **Echo**, your GreenCampus AI companion. "
+            "I can help you report broken facilities, triage campus hazards, share green living hacks, "
+            "or link you with study buddies in Campus Connect! What's on your mind today? ✨"
+        )
+        actions = ["Report Campus Issue ✏️", "Find Study Buddy ☕", "Check Open Issues 📊"]
+
+    return ChatResponse(
+        reply=reply,
+        model_used="local-campus-engine",
+        provider="fallback",
+        timestamp=timestamp,
+        suggested_actions=actions,
+    )
+
+
+def generate_chat_reply(
+    message: str,
+    history: Optional[list[ChatMessage]] = None,
+) -> ChatResponse:
+    """
+    Generates a conversational response using the full 4-tier fallback:
+      1. Free Google Gemini Models (cycling through primary + fallbacks)
+      2. xAI Grok
+      3. OpenAI
+      4. Local Campus Knowledge Base
+    """
+    timestamp = datetime.now().strftime("%I:%M %p")
+
+    # ── Tier 1: Free Gemini Models ──
+    if is_gemini_configured():
+        try:
+            from google import genai
+            from google.genai import types
+
+            api_key = os.getenv("GEMINI_API_KEY", "").strip()
+            client = genai.Client(api_key=api_key)
+
+            # Build conversational prompt
+            prompt_parts = []
+            if history:
+                for h in history[-6:]:
+                    prompt_parts.append(f"{h.role.capitalize()}: {h.content}")
+            prompt_parts.append(f"User: {message}")
+            full_prompt = "\n".join(prompt_parts)
+
+            for model_name in CANDIDATE_GEMINI_MODELS:
+                try:
+                    logger.info("Attempting Gemini chat: %s", model_name)
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=full_prompt,
+                        config=types.GenerateContentConfig(
+                            system_instruction=SYSTEM_INSTRUCTION_CHAT,
+                            temperature=0.7,
+                        ),
+                    )
+
+                    if response and response.text:
+                        return ChatResponse(
+                            reply=response.text.strip(),
+                            model_used=model_name,
+                            provider="gemini",
+                            timestamp=timestamp,
+                            suggested_actions=["Report Issue ✏️", "Campus Connect 🤝", "Dashboard 📊"],
+                        )
+                except Exception as exc:
+                    logger.warning("Gemini chat model '%s' limit/error (%s). Trying next free model...", model_name, exc)
+                    if "API_KEY_INVALID" in str(exc) or "PERMISSION_DENIED" in str(exc):
+                        break
+
+        except Exception as e:
+            logger.warning("Gemini chat tier failed (%s). Advancing to xAI Grok...", e)
+
+    # ── Tier 2: xAI Grok ──
+    if is_xai_configured():
+        try:
+            logger.info("Attempting xAI Grok chat...")
+            api_key = os.getenv("XAI_API_KEY", "").strip()
+            model = os.getenv("XAI_MODEL", DEFAULT_GROK_MODEL).strip() or DEFAULT_GROK_MODEL
+
+            messages = [{"role": "system", "content": SYSTEM_INSTRUCTION_CHAT}]
+            if history:
+                for h in history[-6:]:
+                    messages.append({"role": h.role, "content": h.content})
+            messages.append({"role": "user", "content": message})
+
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0.7,
+            }
+
+            req = urllib.request.Request(
+                "https://api.x.ai/v1/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "GreenCampus-AI/1.3.0",
+                },
+                method="POST",
+            )
+
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as res:
+                res_data = json.loads(res.read().decode("utf-8"))
+                reply_text = res_data["choices"][0]["message"]["content"]
+                return ChatResponse(
+                    reply=reply_text.strip(),
+                    model_used=f"xAI {model}",
+                    provider="grok",
+                    timestamp=timestamp,
+                    suggested_actions=["Report Issue ✏️", "Campus Connect 🤝", "Dashboard 📊"],
+                )
+        except Exception as e:
+            logger.warning("xAI Grok chat failed (%s). Advancing to OpenAI...", e)
+
+    # ── Tier 3: OpenAI ──
+    if is_openai_configured():
+        try:
+            logger.info("Attempting OpenAI chat...")
+            api_key = os.getenv("OPENAI_API_KEY", "").strip()
+            model = os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
+
+            messages = [{"role": "system", "content": SYSTEM_INSTRUCTION_CHAT}]
+            if history:
+                for h in history[-6:]:
+                    messages.append({"role": h.role, "content": h.content})
+            messages.append({"role": "user", "content": message})
+
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0.7,
+            }
+
+            req = urllib.request.Request(
+                "https://api.openai.com/v1/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "GreenCampus-AI/1.3.0",
+                },
+                method="POST",
+            )
+
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as res:
+                res_data = json.loads(res.read().decode("utf-8"))
+                reply_text = res_data["choices"][0]["message"]["content"]
+                return ChatResponse(
+                    reply=reply_text.strip(),
+                    model_used=f"OpenAI {model}",
+                    provider="openai",
+                    timestamp=timestamp,
+                    suggested_actions=["Report Issue ✏️", "Campus Connect 🤝", "Dashboard 📊"],
+                )
+        except Exception as e:
+            logger.warning("OpenAI chat failed (%s). Falling back to local campus engine...", e)
+
+    # ── Tier 4: Local Campus Knowledge Base Fallback ──
+    logger.info("Using local campus knowledge base fallback for chat.")
+    return _campus_knowledge_fallback(message)

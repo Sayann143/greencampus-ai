@@ -33,6 +33,12 @@ export default function Navbar() {
           <Link to="/connect" className={linkClass('/connect')}>
             🤝 <span>Campus Connect</span>
           </Link>
+          <Link to="/chat" className={linkClass('/chat')}>
+            💬 <span>EcoChat</span>
+            <span className="hidden md:inline px-1.5 py-0.2 text-[10px] bg-emerald-100 text-emerald-800 font-bold rounded-full animate-pulse">
+              AI
+            </span>
+          </Link>
         </div>
       </div>
     </nav>
