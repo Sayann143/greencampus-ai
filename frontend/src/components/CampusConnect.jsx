@@ -205,6 +205,16 @@ export default function CampusConnect() {
     loadProfilesAndMyStatus()
   }, [loadProfilesAndMyStatus])
 
+  // Auto-refresh connections and requests every 10 seconds
+  useEffect(() => {
+    if (!currentProfileId) return
+    const interval = setInterval(() => {
+      loadConnectionData(currentProfileId)
+      loadActiveStudents()
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [currentProfileId, loadConnectionData, loadActiveStudents])
+
   // ── Switch Active Profile ──────────────────────────────────────────────────
   const handleProfileSelectChange = async (e) => {
     const val = e.target.value
@@ -365,8 +375,9 @@ export default function CampusConnect() {
         setRequestFeedback(null)
       }, 1500)
 
-      // Reload connection data
+      // Reload connection data + directory immediately
       loadConnectionData(currentProfileId)
+      loadActiveStudents()
     } catch (err) {
       console.error('Failed to send request:', err)
       setRequestFeedback({

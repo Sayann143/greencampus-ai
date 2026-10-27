@@ -237,18 +237,39 @@ export function getEchoLocalResponse(query) {
     };
   }
 
-  // 14. Thoughtful Open-Ended Campus Assistant Response
+  // 14. Thoughtful Open-Ended Campus Assistant Response — with selectable categories
   return {
     reply:
-      `Got it! 🌿 Regarding "${query.length > 50 ? query.slice(0, 47) + '...' : query}":\n\n` +
-      "As your university smart assistant, I can help you with:\n" +
-      "• 📚 **Campus Information:** Library timings (8 AM - 10 PM), cafeteria options, Wi-Fi connectivity, and student clubs.\n" +
-      "• 🤝 **Campus Connect:** Finding study buddies or coffee meetups across campus areas.\n" +
-      "• 🛠️ **Facilities & Triage:** Checking ticket statuses or routing maintenance requests.\n" +
-      "• 🌱 **Eco Advice:** Energy conservation tips and campus recycling programs.\n\n" +
-      "Could you tell me a little more about what you'd like to know or accomplish? I'm happy to help! ✨",
+      `🌿 I'd love to help with that! Regarding "${query.length > 50 ? query.slice(0, 47) + '...' : query}":\n\n` +
+      "I'm not 100% sure which topic you're asking about. Here's what I can help with — **tap a button below** to get a detailed answer:\n\n" +
+      "• 📚 **Library & Study Spaces** — Timings, borrowing, silent zones\n" +
+      "• 💻 **Wi-Fi & IT Support** — Network names, login help, IT desk\n" +
+      "• ☕ **Cafeteria & Food** — Dining hours, eco-discounts, locations\n" +
+      "• 🏆 **Clubs, Sports & Gym** — Societies, sports complex, events\n" +
+      "• 📝 **Exams & Study Tips** — Preparation methods, past papers\n" +
+      "• 🏠 **Hostels & Transport** — Curfew, laundry, shuttle schedule\n" +
+      "• 💧 **Water & Plumbing Issues** — Report leaks and flooding\n" +
+      "• ⚡ **Electrical & AC Issues** — Broken lights, AC, hazards\n" +
+      "• 🧹 **Cleanliness** — Sanitation, trash, spills\n" +
+      "• 🌱 **Sustainability & Eco Tips** — Recycling, green living\n" +
+      "• 🤝 **Campus Connect** — Find study buddies and peers\n" +
+      "• ✏️ **Report an Issue** — File a campus maintenance ticket\n\n" +
+      "Pick one from the buttons below, or rephrase your question and I'll answer right away! ✨",
     provider: 'echo-engine',
     timestamp,
-    suggested_actions: ['Library Hours 📚', 'Campus Wi-Fi 💻', 'Campus Connect 🤝', 'Report Issue ✏️'],
+    suggested_actions: [
+      'Library Hours 📚',
+      'Campus Wi-Fi 💻',
+      'Cafeteria & Food ☕',
+      'Clubs & Sports 🏆',
+      'Exams & Tips 📝',
+      'Hostels & Transport 🏠',
+      'Report Water Leak 💧',
+      'Report Electrical ⚡',
+      'Cleanliness 🧹',
+      'Eco & Sustainability 🌱',
+      'Campus Connect 🤝',
+      'Report Issue ✏️',
+    ],
   };
 }

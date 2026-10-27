@@ -7,8 +7,9 @@ export default function FloatingChatWidget() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: "Hey! 🌿 Need help with a campus problem, finding a study buddy, or eco-tips? Ask me anything!",
+      content: "Hey! 🌿 Need help with a campus problem, finding a study buddy, or eco-tips? Ask me anything or tap a topic!",
       timestamp: 'Online',
+      suggested_actions: ['Library 📚', 'Wi-Fi 💻', 'Food ☕', 'Report Issue ✏️', 'Eco Tips 🌱'],
     },
   ])
   const [input, setInput] = useState('')
@@ -21,8 +22,8 @@ export default function FloatingChatWidget() {
     }
   }, [messages, loading, isOpen])
 
-  const handleSend = async () => {
-    const query = input.trim()
+  const handleSend = async (textOverride = null) => {
+    const query = (textOverride || input).trim()
     if (!query || loading) return
 
     setInput('')
@@ -47,6 +48,7 @@ export default function FloatingChatWidget() {
           content: res.reply,
           provider: res.provider,
           timestamp: res.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          suggested_actions: res.suggested_actions || [],
         },
       ])
     } catch {
@@ -58,6 +60,7 @@ export default function FloatingChatWidget() {
           content: local.reply,
           provider: 'echo-engine',
           timestamp: local.timestamp,
+          suggested_actions: local.suggested_actions || [],
         },
       ])
     } finally {
@@ -92,20 +95,37 @@ export default function FloatingChatWidget() {
           {/* Messages Feed */}
           <div className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-gray-50/50 text-xs">
             {messages.map((m, i) => (
-              <div
-                key={i}
-                className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}
-              >
+              <div key={i}>
                 <div
-                  className={`max-w-[85%] rounded-2xl px-3 py-2 shadow-xs ${
-                    m.role === 'user'
-                      ? 'bg-emerald-600 text-white rounded-tr-xs'
-                      : 'bg-white text-gray-800 border border-gray-100 rounded-tl-xs'
-                  }`}
+                  className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}
                 >
-                  <p className="whitespace-pre-wrap">{m.content}</p>
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-3 py-2 shadow-xs ${
+                      m.role === 'user'
+                        ? 'bg-emerald-600 text-white rounded-tr-xs'
+                        : 'bg-white text-gray-800 border border-gray-100 rounded-tl-xs'
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap">{m.content}</p>
+                  </div>
+                  <span className="text-[9px] text-gray-400 mt-0.5 px-1">{m.timestamp}</span>
                 </div>
-                <span className="text-[9px] text-gray-400 mt-0.5 px-1">{m.timestamp}</span>
+
+                {/* Suggested action chips for assistant messages */}
+                {m.role === 'assistant' && m.suggested_actions && m.suggested_actions.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1.5 ml-1">
+                    {m.suggested_actions.map((act, j) => (
+                      <button
+                        key={j}
+                        onClick={() => handleSend(act)}
+                        disabled={loading}
+                        className="text-[10px] bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full font-medium transition-colors disabled:opacity-50"
+                      >
+                        {act}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
 
@@ -132,7 +152,7 @@ export default function FloatingChatWidget() {
               className="flex-1 bg-gray-50 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
             />
             <button
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={!input.trim() || loading}
               className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 disabled:opacity-40 transition"
             >

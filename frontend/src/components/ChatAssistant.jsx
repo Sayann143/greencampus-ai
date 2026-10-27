@@ -165,10 +165,19 @@ export default function ChatAssistant() {
       content:
         "Yo! 👋 I'm **Echo**, your 24/7 GreenCampus AI companion. " +
         "Spot a leaking pipe? Broken AC in lab? Need to find a study buddy or want green living tips? " +
-        "Ask me anything or tap one of the quick cards below! 🌿✨",
+        "Ask me anything or tap one of the quick cards below! 🌿✨\n\n" +
+        "**Here's what I can help with:**\n" +
+        "• 📚 Library hours & study spaces\n" +
+        "• 💻 Wi-Fi & IT support\n" +
+        "• ☕ Cafeteria & dining options\n" +
+        "• 🏆 Clubs, sports & gym\n" +
+        "• ⚡ Report facility issues\n" +
+        "• 🤝 Find study buddies\n" +
+        "• 🌱 Sustainability & eco tips\n\n" +
+        "Tap a topic below to get started! ⬇️",
       provider: 'gemini',
       timestamp: 'Online',
-      suggested_actions: ['Report a water leak 💧', 'Find study buddy ☕', 'Check open tickets 📊'],
+      suggested_actions: ['Library Hours 📚', 'Campus Wi-Fi 💻', 'Cafeteria ☕', 'Report Issue ✏️', 'Find Study Buddy 🤝', 'Eco Tips 🌱', 'Clubs & Sports 🏆'],
     },
   ])
   const [input, setInput] = useState('')
@@ -257,10 +266,12 @@ export default function ChatAssistant() {
     setMessages([
       {
         role: 'assistant',
-        content: "Fresh slate! ✨ What's happening on campus? Ask away or pick a quick topic below.",
+        content: "Fresh slate! ✨ What's happening on campus? Tap a topic below or ask me anything!\n\n" +
+          "• 📚 Library & Study   • 💻 Wi-Fi & IT   • ☕ Food & Dining\n" +
+          "• 🏆 Clubs & Sports   • ⚡ Report Issue   • 🤝 Campus Connect",
         provider: 'gemini',
         timestamp: 'Reset',
-        suggested_actions: ['Report a water leak 💧', 'Find study buddy ☕'],
+        suggested_actions: ['Library Hours 📚', 'Campus Wi-Fi 💻', 'Report Issue ✏️', 'Find Study Buddy 🤝', 'Eco Tips 🌱'],
       },
     ])
   }

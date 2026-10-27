@@ -172,14 +172,6 @@ export default function CampusChat() {
     localStorage.setItem('greencampus_connect_profile_id', newId);
   };
 
-  // ── Switch to peer identity (quick "reply as peer" button) ───────────────
-  const handleSwitchToPeer = () => {
-    if (!selectedPeer) return;
-    const oldProfile = profiles.find(p => String(p.id) === String(currentProfileId));
-    handleProfileSwitch(String(selectedPeer.id));
-    if (oldProfile) setSelectedPeer(oldProfile);
-  };
-
   // ── Send a message to the backend ────────────────────────────────────────
   const handleSend = async () => {
     const text = input.trim();
@@ -399,16 +391,9 @@ export default function CampusChat() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleSwitchToPeer}
-                    className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold px-2.5 py-1.5 rounded-lg border border-emerald-200 transition flex items-center gap-1 shadow-2xs"
-                    title={`Switch active user identity to ${selectedPeer.name} to view/reply`}
-                  >
-                    <span>Reply as {selectedPeer.name.split(' ')[0]} 👤</span>
-                  </button>
                   <div className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 bg-emerald-50 px-2 py-1.5 rounded-lg border border-emerald-200">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
-                    Live
+                    Live Sync
                   </div>
                 </div>
               </div>

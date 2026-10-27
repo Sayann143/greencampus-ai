@@ -16,8 +16,12 @@ export default function Navbar() {
     <nav className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-50">
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         {/* Logo + Brand */}
-        <Link to="/dashboard" className="flex items-center gap-2">
-          <span className="text-2xl">🌿</span>
+        <Link to="/dashboard" className="flex items-center gap-2.5">
+          <img
+            src="/logo.jpg"
+            alt="GreenCampus AI"
+            className="w-9 h-9 rounded-xl shadow-sm border border-emerald-200 object-cover"
+          />
           <div>
             <h1 className="text-lg font-bold text-green-700 leading-tight">GreenCampus AI</h1>
             <p className="text-xs text-gray-400 leading-tight">Smart Campus & Student Connect</p>
