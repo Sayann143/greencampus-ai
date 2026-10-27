@@ -730,17 +730,17 @@ export default function CampusConnect() {
       </div>
 
       {/* ── SECTION 2: NAVIGATION TABS (Directory / Requests / Connections) ── */}
-      <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
+      <div className="flex items-center gap-2 border-b border-gray-200 pb-2 overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab('directory')}
-          className={`group px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 hover:scale-105 active:scale-95 duration-150 ${
+          className={`group px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 hover:scale-105 active:scale-95 duration-150 flex-shrink-0 ${
             activeTab === 'directory'
               ? 'bg-green-600 text-white shadow-sm'
               : 'text-gray-600 hover:bg-gray-100'
           }`}
         >
           <span className="inline-block transition-transform duration-200 group-hover:scale-125">📡</span>
-          <span>Live Campus Directory</span>
+          <span>Live Directory</span>
           <span className={`text-xs px-2 py-0.5 rounded-full ${activeTab === 'directory' ? 'bg-green-700 text-white' : 'bg-gray-100 text-gray-700'}`}>
             {activeStudents.length}
           </span>
@@ -748,7 +748,7 @@ export default function CampusConnect() {
 
         <button
           onClick={() => setActiveTab('requests')}
-          className={`group px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 hover:scale-105 active:scale-95 duration-150 ${
+          className={`group px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 hover:scale-105 active:scale-95 duration-150 flex-shrink-0 ${
             activeTab === 'requests'
               ? 'bg-green-600 text-white shadow-sm'
               : 'text-gray-600 hover:bg-gray-100'
@@ -769,14 +769,14 @@ export default function CampusConnect() {
 
         <button
           onClick={() => setActiveTab('connections')}
-          className={`group px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 hover:scale-105 active:scale-95 duration-150 ${
+          className={`group px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 hover:scale-105 active:scale-95 duration-150 flex-shrink-0 ${
             activeTab === 'connections'
               ? 'bg-green-600 text-white shadow-sm'
               : 'text-gray-600 hover:bg-gray-100'
           }`}
         >
           <span className="inline-block transition-transform duration-200 group-hover:scale-125">👥</span>
-          <span>My Connections</span>
+          <span>Connections</span>
           <span className={`text-xs px-2 py-0.5 rounded-full ${activeTab === 'connections' ? 'bg-green-700 text-white' : 'bg-gray-100 text-gray-700'}`}>
             {connections.length}
           </span>
@@ -784,7 +784,7 @@ export default function CampusConnect() {
 
         <Link
           to="/connect/chat"
-          className="group px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 shadow-xs hover:scale-105 active:scale-95 duration-150"
+          className="group px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 shadow-xs hover:scale-105 active:scale-95 duration-150 flex-shrink-0"
         >
           <span className="inline-block transition-transform duration-200 group-hover:scale-125">💬</span>
           <span>Peer Chat</span>

@@ -131,7 +131,7 @@ export default function TicketCard({ ticket, onStatusChange, onVote }) {
   }
 
   return (
-    <div className={`relative group bg-white rounded-2xl border transition-all duration-300 flex flex-col justify-between p-5 hover:-translate-y-1 hover:shadow-xl ${
+    <div className={`relative group bg-white rounded-2xl border transition-all duration-300 flex flex-col justify-between p-3.5 sm:p-5 hover:-translate-y-1 hover:shadow-xl ${
       isHigh
         ? 'border-red-300 hover:border-red-400 shadow-sm shadow-red-500/10 ring-1 ring-red-400/20'
         : isMedium

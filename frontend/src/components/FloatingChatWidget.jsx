@@ -69,10 +69,10 @@ export default function FloatingChatWidget() {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-50">
+    <div className="fixed bottom-20 right-3.5 md:bottom-6 md:right-6 z-50">
       {/* Floating Chat Modal */}
       {isOpen && (
-        <div className="mb-3 w-80 sm:w-96 h-[480px] bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col animate-fade-in backdrop-blur-lg">
+        <div className="mb-3 w-[calc(100vw-28px)] max-w-sm sm:w-96 h-[460px] sm:h-[480px] bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col animate-fade-in backdrop-blur-lg">
           {/* Header */}
           <div className="p-3.5 bg-gradient-to-r from-emerald-800 to-teal-800 text-white flex items-center justify-between">
             <div className="flex items-center gap-2">

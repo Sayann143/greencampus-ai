@@ -372,7 +372,7 @@ export default function CampusChat() {
       {/* Main Split Chat View */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-[550px]">
         {/* Left Sidebar: Friends & Mutual Connections */}
-        <div className="md:col-span-4 lg:col-span-4 border-r border-gray-200 flex flex-col bg-gray-50/50">
+        <div className={`md:col-span-4 lg:col-span-4 border-r border-gray-200 flex flex-col bg-gray-50/50 ${selectedPeer ? 'hidden md:flex' : 'flex'}`}>
           <div className="p-3.5 border-b border-gray-200 bg-white">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-extrabold text-xs uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
@@ -477,13 +477,21 @@ export default function CampusChat() {
         </div>
 
         {/* Right Chat Conversation View */}
-        <div className="md:col-span-8 lg:col-span-8 flex flex-col bg-white">
+        <div className={`md:col-span-8 lg:col-span-8 flex flex-col bg-white ${!selectedPeer ? 'hidden md:flex' : 'flex'}`}>
           {selectedPeer ? (
             <>
               {/* Active Conversation Top Bar */}
               <div className="p-3.5 border-b border-gray-200 flex items-center justify-between bg-white/80 backdrop-blur-sm">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-base shadow-sm transition-transform hover:scale-110 duration-200">
+                <div className="flex items-center gap-2.5">
+                  <button
+                    onClick={() => setSelectedPeer(null)}
+                    className="md:hidden px-2.5 py-1.5 text-gray-600 hover:text-emerald-700 font-bold text-xs bg-gray-100 hover:bg-emerald-50 rounded-xl transition flex items-center gap-1 active:scale-95 flex-shrink-0"
+                    title="Back to Friends"
+                  >
+                    <span>←</span>
+                    <span className="hidden xs:inline">Friends</span>
+                  </button>
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-sm sm:text-base shadow-sm transition-transform hover:scale-110 duration-200 flex-shrink-0">
                     {selectedPeer.name.charAt(0)}
                   </div>
                   <div>
