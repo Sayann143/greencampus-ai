@@ -140,17 +140,21 @@ def seed_database():
         # 1. Seed tickets
         ticket_count = conn.execute("SELECT COUNT(*) FROM tickets").fetchone()[0]
         if ticket_count == 0:
-            conn.executemany(
-                """
-                INSERT INTO tickets
-                  (title, description, category, location, department,
-                   priority, status, submitted_by, ai_suggestion, created_at)
-                VALUES
-                  (:title, :description, :category, :location, :department,
-                   :priority, :status, :submitted_by, :ai_suggestion, :created_at)
-                """,
-                SEED_TICKETS,
-            )
+            for t in SEED_TICKETS:
+                conn.execute(
+                    """
+                    INSERT INTO tickets
+                      (title, description, category, location, department,
+                       priority, status, submitted_by, ai_suggestion, created_at)
+                    VALUES
+                      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        t["title"], t["description"], t["category"], t["location"],
+                        t["department"], t["priority"], t["status"],
+                        t["submitted_by"], t["ai_suggestion"], t["created_at"],
+                    ),
+                )
             conn.commit()
             print(f"  🌱 Seeded {len(SEED_TICKETS)} sample tickets.")
         else:
