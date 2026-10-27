@@ -35,7 +35,7 @@ function StatsBar({ summary, tickets, onOpenTotalModal }) {
             onClick={() => s.isClickable && onOpenTotalModal?.()}
             title={s.isClickable ? 'Click to inspect breakdown modal' : undefined}
           >
-            <div className="text-2xl mb-1.5 transform hover:scale-110 transition-transform">{s.icon}</div>
+            <div className="text-2xl mb-1.5 transform hover:scale-125 transition-transform duration-200 inline-block cursor-default">{s.icon}</div>
             <div className="text-3xl font-extrabold tracking-tight">{s.value}</div>
             <div className="text-xs font-semibold mt-0.5 opacity-90 flex items-center justify-center gap-1">
               <span>{s.label}</span>
@@ -185,7 +185,7 @@ function FilterAndSearchBar({
               }
               setSearchQuery(searchQuery === item.q ? '' : item.q)
             }}
-            className={`flex-shrink-0 text-[11px] px-2.5 py-1 rounded-lg font-bold border transition-all ${
+            className={`flex-shrink-0 text-[11px] px-2.5 py-1 rounded-lg font-bold border transition-all duration-150 hover:scale-110 active:scale-95 ${
               searchQuery.toLowerCase() === item.q
                 ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
                 : 'bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border-gray-200'

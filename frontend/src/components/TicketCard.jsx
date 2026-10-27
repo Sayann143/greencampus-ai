@@ -179,7 +179,7 @@ export default function TicketCard({ ticket, onStatusChange, onVote }) {
               <button
                 onClick={() => handleVote('up')}
                 disabled={isVoting}
-                className="px-2.5 py-1 hover:bg-emerald-50 text-emerald-700 hover:text-emerald-800 font-bold transition flex items-center gap-1 text-xs active:scale-95"
+                className="px-2.5 py-1 hover:bg-emerald-50 text-emerald-700 hover:text-emerald-800 font-bold transition-all duration-150 flex items-center gap-1 text-xs hover:scale-125 active:scale-95"
                 title="Upvote: I am also experiencing this issue"
               >
                 ▲ <span className="text-[10px]">Vote</span>
@@ -192,7 +192,7 @@ export default function TicketCard({ ticket, onStatusChange, onVote }) {
               <button
                 onClick={() => handleVote('down')}
                 disabled={isVoting || votes <= 0}
-                className="px-2 py-1 hover:bg-red-50 text-gray-400 hover:text-red-600 font-bold transition disabled:opacity-30 text-xs active:scale-95"
+                className="px-2 py-1 hover:bg-red-50 text-gray-400 hover:text-red-600 font-bold transition-all duration-150 disabled:opacity-30 text-xs hover:scale-125 active:scale-95"
                 title="Downvote"
               >
                 ▼
@@ -220,7 +220,7 @@ export default function TicketCard({ ticket, onStatusChange, onVote }) {
             <button
               type="button"
               onClick={() => setShowAnimation(true)}
-              className="text-[10px] font-bold text-emerald-700 hover:text-white bg-emerald-50 hover:bg-emerald-600 border border-emerald-200 rounded-lg px-1.5 py-0.5 transition-colors shadow-2xs"
+              className="text-[10px] font-bold text-emerald-700 hover:text-white bg-emerald-50 hover:bg-emerald-600 border border-emerald-200 rounded-lg px-1.5 py-0.5 transition-all duration-150 shadow-2xs hover:scale-110 active:scale-95"
               title="Click to view problem visual effect"
             >
               {effectLabels[problemType] || '✨ Effect'}

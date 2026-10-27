@@ -291,9 +291,9 @@ export default function ReportForm() {
               type="button"
               key={idx}
               onClick={() => applyPreset(preset)}
-              className="text-xs bg-white hover:bg-emerald-600 text-gray-700 hover:text-white border border-emerald-200 hover:border-emerald-600 font-bold px-3 py-1.5 rounded-xl transition-all shadow-2xs hover:shadow-xs flex items-center gap-1.5 active:scale-95"
+              className="group text-xs bg-white hover:bg-emerald-600 text-gray-700 hover:text-white border border-emerald-200 hover:border-emerald-600 font-bold px-3 py-1.5 rounded-xl transition-all duration-150 shadow-2xs hover:shadow-xs flex items-center gap-1.5 hover:scale-105 active:scale-95"
             >
-              <span>{preset.icon}</span>
+              <span className="inline-block transition-transform duration-200 group-hover:scale-125">{preset.icon}</span>
               <span>{preset.label}</span>
             </button>
           ))}

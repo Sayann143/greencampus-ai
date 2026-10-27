@@ -654,13 +654,13 @@ export default function CampusConnect() {
                       type="button"
                       key={act.key}
                       onClick={() => setBroadcastForm({ ...broadcastForm, activity: act.key })}
-                      className={`p-2.5 rounded-xl border text-left text-xs font-medium transition-all ${
+                      className={`group p-2.5 rounded-xl border text-left text-xs font-medium transition-all hover:scale-105 duration-150 ${
                         broadcastForm.activity === act.key
                           ? 'border-green-600 bg-green-50 text-green-800 ring-2 ring-green-600/20 font-bold'
                           : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
                       }`}
                     >
-                      <div className="text-xl mb-1">{act.emoji}</div>
+                      <div className="text-xl mb-1 transition-transform duration-200 group-hover:scale-125 inline-block">{act.emoji}</div>
                       <div>{act.label}</div>
                     </button>
                   ))}
@@ -733,13 +733,14 @@ export default function CampusConnect() {
       <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
         <button
           onClick={() => setActiveTab('directory')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${
+          className={`group px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 hover:scale-105 active:scale-95 duration-150 ${
             activeTab === 'directory'
               ? 'bg-green-600 text-white shadow-sm'
               : 'text-gray-600 hover:bg-gray-100'
           }`}
         >
-          <span>📡 Live Campus Directory</span>
+          <span className="inline-block transition-transform duration-200 group-hover:scale-125">📡</span>
+          <span>Live Campus Directory</span>
           <span className={`text-xs px-2 py-0.5 rounded-full ${activeTab === 'directory' ? 'bg-green-700 text-white' : 'bg-gray-100 text-gray-700'}`}>
             {activeStudents.length}
           </span>
@@ -747,13 +748,14 @@ export default function CampusConnect() {
 
         <button
           onClick={() => setActiveTab('requests')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${
+          className={`group px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 hover:scale-105 active:scale-95 duration-150 ${
             activeTab === 'requests'
               ? 'bg-green-600 text-white shadow-sm'
               : 'text-gray-600 hover:bg-gray-100'
           }`}
         >
-          <span>📬 Requests</span>
+          <span className="inline-block transition-transform duration-200 group-hover:scale-125">📬</span>
+          <span>Requests</span>
           {pendingReceived.length > 0 ? (
             <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold animate-pulse">
               {pendingReceived.length} new
@@ -767,13 +769,14 @@ export default function CampusConnect() {
 
         <button
           onClick={() => setActiveTab('connections')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${
+          className={`group px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 hover:scale-105 active:scale-95 duration-150 ${
             activeTab === 'connections'
               ? 'bg-green-600 text-white shadow-sm'
               : 'text-gray-600 hover:bg-gray-100'
           }`}
         >
-          <span>👥 My Connections</span>
+          <span className="inline-block transition-transform duration-200 group-hover:scale-125">👥</span>
+          <span>My Connections</span>
           <span className={`text-xs px-2 py-0.5 rounded-full ${activeTab === 'connections' ? 'bg-green-700 text-white' : 'bg-gray-100 text-gray-700'}`}>
             {connections.length}
           </span>
@@ -781,9 +784,10 @@ export default function CampusConnect() {
 
         <Link
           to="/connect/chat"
-          className="px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 shadow-xs"
+          className="group px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 shadow-xs hover:scale-105 active:scale-95 duration-150"
         >
-          <span>💬 Peer Chat</span>
+          <span className="inline-block transition-transform duration-200 group-hover:scale-125">💬</span>
+          <span>Peer Chat</span>
           <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.2 rounded-full font-bold">
             Live
           </span>

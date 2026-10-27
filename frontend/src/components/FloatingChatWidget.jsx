@@ -168,7 +168,7 @@ export default function FloatingChatWidget() {
         className="group relative flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600 via-teal-600 to-green-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm rounded-full shadow-xl shadow-emerald-600/30 ring-2 ring-emerald-400/40 hover:scale-105 active:scale-95 transition-all duration-200"
         title="Chat with Campus AI"
       >
-        <span className="text-lg animate-bounce">💬</span>
+        <span className="text-lg transition-transform duration-200 group-hover:scale-125 inline-block animate-bounce">💬</span>
         <span className="font-semibold tracking-wide">Ask Echo AI</span>
         <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-ping"></span>
       </button>

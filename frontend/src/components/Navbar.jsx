@@ -5,7 +5,7 @@ export default function Navbar() {
 
   const linkClass = (path) => {
     const isActive = location.pathname === path || (path === '/connect' && location.pathname.startsWith('/connect'))
-    return `px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 flex items-center gap-1.5 ${
+    return `px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 group ${
       isActive
         ? 'bg-green-600 text-white shadow-sm'
         : 'text-gray-600 hover:bg-green-50 hover:text-green-700'
@@ -31,16 +31,20 @@ export default function Navbar() {
         {/* Navigation Links */}
         <div className="flex items-center gap-1 sm:gap-2">
           <Link to="/dashboard" className={linkClass('/dashboard')}>
-            📊 <span className="hidden sm:inline">Dashboard</span>
+            <span className="inline-block transition-transform duration-200 group-hover:scale-125">📊</span>
+            <span className="hidden sm:inline">Dashboard</span>
           </Link>
           <Link to="/report" className={linkClass('/report')}>
-            ✏️ <span className="hidden sm:inline">Report Issue</span>
+            <span className="inline-block transition-transform duration-200 group-hover:scale-125">✏️</span>
+            <span className="hidden sm:inline">Report Issue</span>
           </Link>
           <Link to="/connect" className={linkClass('/connect')}>
-            🤝 <span>Campus Connect</span>
+            <span className="inline-block transition-transform duration-200 group-hover:scale-125">🤝</span>
+            <span>Campus Connect</span>
           </Link>
           <Link to="/chat" className={linkClass('/chat')}>
-            💬 <span>EcoChat</span>
+            <span className="inline-block transition-transform duration-200 group-hover:scale-125">💬</span>
+            <span>EcoChat</span>
             <span className="hidden md:inline px-1.5 py-0.2 text-[10px] bg-emerald-100 text-emerald-800 font-bold rounded-full animate-pulse">
               AI
             </span>
