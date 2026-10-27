@@ -25,6 +25,16 @@ function StatsBar({ summary, tickets }) {
       {/* 5 Top KPI Cards with Hover Lift */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         {stats.map(s => (
+        <div
+          key={s.label}
+          className={`rounded-2xl border p-4 text-center transition-all duration-300 transform hover:-translate-y-1.5 hover:shadow-lg shadow-sm cursor-pointer backdrop-blur-sm ${s.bg}`}
+          onClick={() => s.label === 'Total Reports' && setShowTotalModal(true)}
+        >
+          <div className="text-2xl mb-1.5 transform hover:scale-110 transition-transform">{s.icon}</div>
+          <div className="text-3xl font-extrabold tracking-tight">{s.value}</div>
+          <div className="text-xs font-semibold mt-0.5 opacity-90">{s.label}</div>
+        </div>
+      ))}
           <div
             key={s.label}
             className={`rounded-2xl border p-4 text-center transition-all duration-300 transform hover:-translate-y-1.5 hover:shadow-lg shadow-sm cursor-default backdrop-blur-sm ${s.bg}`}
@@ -154,7 +164,14 @@ function FilterAndSearchBar({
 }
 
 // ─── Main Dashboard Component ─────────────────────────────────────────────────
+import Modal from './Modal.jsx';
+
 export default function Dashboard() {
+  // Modal for Total Reports details
+  // Imported from ./Modal.jsx
+  // Modal for Total Reports details
+  // Imported from ./Modal.jsx
+  const [showTotalModal, setShowTotalModal] = useState(false);
   const [tickets, setTickets] = useState([])
   const [summary, setSummary] = useState(null)
   const [filter, setFilter] = useState('All')
@@ -271,7 +288,36 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Page Header */}
+            {/* Modal for Total Reports */}
+      <Modal isOpen={showTotalModal} onClose={() => setShowTotalModal(false)}>
+        <h2 className="text-xl font-bold mb-4">Total Reports Overview</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+            <p className="text-sm font-medium text-emerald-800">Total Reports</p>
+            <p className="text-2xl font-bold text-emerald-900">{counts.total}</p>
+          </div>
+          <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="text-sm font-medium text-blue-800">Open</p>
+            <p className="text-2xl font-bold text-blue-900">{counts.open}</p>
+          </div>
+          <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+            <p className="text-sm font-medium text-amber-800">In Progress</p>
+            <p className="text-2xl font-bold text-amber-900">{counts.inProgress}</p>
+          </div>
+          <div className="p-3 bg-teal-50 rounded-lg border border-teal-200">
+            <p className="text-sm font-medium text-teal-800">Resolved</p>
+            <p className="text-2xl font-bold text-teal-900">{counts.resolved}</p>
+          </div>
+        </div>
+        <div className="mt-4 text-right">
+          <button
+            className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition"
+            onClick={() => setShowTotalModal(false)}
+          >
+            Close
+          </button>
+        </div>
+      </Modal>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold mb-1.5">
