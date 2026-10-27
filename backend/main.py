@@ -34,6 +34,7 @@ Features:
       - PATCH /api/connect/messages/read (Mark messages as read)
 """
 
+import re
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -344,15 +345,29 @@ def vote_ticket(ticket_id: int, body: TicketVoteRequest):
     delta = 1 if body.direction == "up" else -1
     new_votes = max(0, current_votes + delta)
     current_priority = row["priority"]
-    new_priority = current_priority
     ai_explanation = row["ai_explanation"] or ""
 
-    # Community Escalation rule: 3+ votes automatically escalate to High priority
-    if new_votes >= 3 and current_priority != "High":
+    # Check for immediate life/safety hazard keywords
+    text_content = f"{row['title']} {row['description']}".lower()
+    is_emergency = any(w in text_content for w in ["gas leak", "spark", "smoke", "fire", "bare wire", "flood", "burst pipe"])
+
+    # Community Vote Thresholds:
+    # >= 15 votes: High Priority
+    # 8 - 14 votes: Medium Priority (or High if safety emergency)
+    # < 8 votes: Low Priority (or High if safety emergency)
+    clean_explanation = re.sub(r"\[⚡ Community Escalation:[^\]]+\]", "", ai_explanation).strip()
+
+    if new_votes >= 15:
         new_priority = "High"
-        tag = "[⚡ Community Escalation: 3+ students upvoted this issue, escalating urgency to High Priority.]"
-        if tag not in ai_explanation:
-            ai_explanation = f"{ai_explanation} {tag}".strip()
+        tag = f"[⚡ Community Escalation: High Priority confirmed with {new_votes} upvotes (Threshold >= 15).]"
+        ai_explanation = f"{clean_explanation} {tag}".strip()
+    elif new_votes >= 8:
+        new_priority = "High" if is_emergency else "Medium"
+        tag = f"[⚡ Community Escalation: Medium Priority with {new_votes} upvotes (8-14 tier).]"
+        ai_explanation = f"{clean_explanation} {tag}".strip()
+    else:
+        new_priority = "High" if is_emergency else "Low"
+        ai_explanation = clean_explanation
 
     with get_connection() as conn:
         conn.execute(

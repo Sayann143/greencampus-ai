@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import TicketCard from './TicketCard'
 import Modal from './Modal'
+import ProblemAnimation, { detectProblemType } from './ProblemAnimation'
 import { fetchTickets, fetchDashboardSummary, updateTicketStatus, voteTicket } from '../api'
 
 // ─── Summary Stats Bar with Resolution Rate & Hover Animations ────────────────
@@ -86,6 +87,7 @@ function FilterAndSearchBar({
   setSearchQuery,
   counts,
   categories,
+  onTopicClick,
 }) {
   const statusButtons = [
     { key: 'All', label: 'All', count: counts.total },
@@ -168,16 +170,21 @@ function FilterAndSearchBar({
           Quick Topics:
         </span>
         {[
-          { label: '💧 Water Leaks', q: 'water' },
-          { label: '🚨 Gas Leaks', q: 'gas' },
-          { label: '📶 Wi-Fi', q: 'wifi' },
-          { label: '❄️ AC / Cooling', q: 'ac' },
-          { label: '⚡ Sparks / Wires', q: 'electric' },
-          { label: '🗑️ Trash & Bins', q: 'dustbin' },
+          { label: '💧 Water Leaks', q: 'water', effect: 'water' },
+          { label: '🚨 Gas Leaks', q: 'gas', effect: 'smoke' },
+          { label: '📶 Wi-Fi', q: 'wifi', effect: 'wifi' },
+          { label: '❄️ AC / Cooling', q: 'ac', effect: 'ac' },
+          { label: '⚡ Sparks / Wires', q: 'electric', effect: 'smoke' },
+          { label: '🗑️ Trash & Bins', q: 'dustbin', effect: 'garbage' },
         ].map(item => (
           <button
             key={item.label}
-            onClick={() => setSearchQuery(searchQuery === item.q ? '' : item.q)}
+            onClick={() => {
+              if (searchQuery !== item.q && onTopicClick) {
+                onTopicClick(item.effect)
+              }
+              setSearchQuery(searchQuery === item.q ? '' : item.q)
+            }}
             className={`flex-shrink-0 text-[11px] px-2.5 py-1 rounded-lg font-bold border transition-all ${
               searchQuery.toLowerCase() === item.q
                 ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
@@ -211,6 +218,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [actionError, setActionError] = useState(null)
+  const [activeTopicEffect, setActiveTopicEffect] = useState(null)
 
   // Fetch tickets & summary from backend
   const loadData = useCallback(async () => {
@@ -478,16 +486,24 @@ export default function Dashboard() {
           />
 
           {/* Filter & Search Controls */}
-          <FilterAndSearchBar
-            filter={filter}
-            setFilter={setFilter}
-            selectedCategory={selectedCategory}
-            setSelectedCategory={setSelectedCategory}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            counts={counts}
-            categories={categories}
-          />
+          <div className="relative">
+            <ProblemAnimation
+              type={activeTopicEffect}
+              active={!!activeTopicEffect}
+              onComplete={() => setActiveTopicEffect(null)}
+            />
+            <FilterAndSearchBar
+              filter={filter}
+              setFilter={setFilter}
+              selectedCategory={selectedCategory}
+              setSelectedCategory={setSelectedCategory}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              counts={counts}
+              categories={categories}
+              onTopicClick={setActiveTopicEffect}
+            />
+          </div>
 
           {/* Ticket Grid / Loading / Empty State */}
           {loading ? (

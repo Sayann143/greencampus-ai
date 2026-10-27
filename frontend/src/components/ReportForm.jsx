@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createTicket } from '../api'
 import { PriorityBadge } from './TicketCard'
+import ProblemAnimation, { detectProblemType } from './ProblemAnimation'
 
 // Categories a student can choose from
 const CATEGORIES = [
@@ -97,6 +98,7 @@ export default function ReportForm() {
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState({})
   const [serverError, setServerError] = useState(null)
+  const [activeAnimation, setActiveAnimation] = useState(null)
 
   // Update a single field
   const update = (field) => (e) =>
@@ -104,6 +106,7 @@ export default function ReportForm() {
 
   // Apply one-click common issue template
   const applyPreset = (preset) => {
+    setActiveAnimation(detectProblemType(preset))
     setForm(prev => ({
       ...prev,
       title: preset.title,
@@ -263,7 +266,14 @@ export default function ReportForm() {
       )}
 
       {/* Quick Common Issue Presets */}
-      <div className="mb-6 bg-gradient-to-r from-emerald-50/90 via-teal-50/90 to-green-50/90 border border-emerald-200 rounded-2xl p-4 shadow-sm">
+      <div className="relative mb-6 bg-gradient-to-r from-emerald-50/90 via-teal-50/90 to-green-50/90 border border-emerald-200 rounded-2xl p-4 shadow-sm overflow-hidden">
+        {/* Interactive Problem Particle Effect */}
+        <ProblemAnimation
+          type={activeAnimation}
+          active={!!activeAnimation}
+          onComplete={() => setActiveAnimation(null)}
+        />
+
         <div className="flex items-center justify-between mb-2.5">
           <span className="text-xs font-black text-emerald-900 tracking-wide uppercase flex items-center gap-1.5">
             ⚡ Quick Report Common Issues:

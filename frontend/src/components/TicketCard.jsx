@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ProblemAnimation, { detectProblemType } from './ProblemAnimation'
 
 // Priority badge with animated pulse for High urgency
 export function PriorityBadge({ priority }) {
@@ -62,16 +63,34 @@ export default function TicketCard({ ticket, onStatusChange, onVote }) {
   const [isUpdating, setIsUpdating] = useState(false)
   const [isVoting, setIsVoting] = useState(false)
   const [showAiDetails, setShowAiDetails] = useState(false)
+  const [showAnimation, setShowAnimation] = useState(false)
   const [localVotes, setLocalVotes] = useState(ticket.votes || 0)
-  const [localPriority, setLocalPriority] = useState(ticket.priority)
 
+  const votes = typeof ticket.votes === 'number' ? ticket.votes : localVotes
+
+  // Dynamic priority calculation based on community votes:
+  // >= 15 votes: High Priority
+  // 8 - 14 votes: Medium Priority
+  // < 8 votes: Low Priority (unless safety-critical emergency)
+  const textContent = `${ticket.title} ${ticket.description}`.toLowerCase()
+  const isEmergency = ['gas leak', 'spark', 'smoke', 'fire', 'bare wire', 'flood', 'burst pipe'].some(w => textContent.includes(w))
+
+  let priority = ticket.priority
+  if (votes >= 15) {
+    priority = 'High'
+  } else if (votes >= 8) {
+    priority = isEmergency ? 'High' : 'Medium'
+  } else {
+    priority = isEmergency ? 'High' : (ticket.priority === 'High' && !isEmergency ? 'Medium' : ticket.priority || 'Low')
+  }
+
+  const isHigh = priority === 'High'
+  const isMedium = priority === 'Medium'
   const submittedBy = ticket.submitted_by || ticket.submittedBy || 'Anonymous'
   const dateDisplay = formatDate(ticket.created_at || ticket.date)
   const aiSuggestion = ticket.ai_suggestion || ticket.aiSuggestion
   const aiAction = ticket.ai_action
-  const votes = typeof ticket.votes === 'number' ? ticket.votes : localVotes
-  const priority = ticket.priority || localPriority
-  const isHigh = priority === 'High'
+  const problemType = detectProblemType(ticket)
 
   async function handleStatusSelect(e) {
     const newStatus = e.target.value
@@ -87,31 +106,45 @@ export default function TicketCard({ ticket, onStatusChange, onVote }) {
   async function handleVote(direction) {
     if (isVoting || !onVote) return
     setIsVoting(true)
-    // Optimistic update
+    // Trigger problem animation on vote!
+    setShowAnimation(true)
     const delta = direction === 'up' ? 1 : -1
     const nextVotes = Math.max(0, votes + delta)
     setLocalVotes(nextVotes)
-    if (nextVotes >= 3) {
-      setLocalPriority('High')
-    }
     try {
       await onVote(ticket.id, direction)
     } catch (err) {
-      // Revert if error
       setLocalVotes(votes)
-      setLocalPriority(ticket.priority)
       console.error('Failed to vote:', err)
     } finally {
       setIsVoting(false)
     }
   }
 
+  // Label for problem effect
+  const effectLabels = {
+    water: '💧 Water Splash',
+    smoke: '💨 Smoke & Sparks',
+    garbage: '🗑️ Trash Flow',
+    wifi: '📶 Wi-Fi Ping',
+    ac: '❄️ Frost Breeze',
+  }
+
   return (
-    <div className={`group bg-white rounded-2xl border transition-all duration-300 flex flex-col justify-between p-5 hover:-translate-y-1 hover:shadow-xl ${
+    <div className={`relative group bg-white rounded-2xl border transition-all duration-300 flex flex-col justify-between p-5 hover:-translate-y-1 hover:shadow-xl ${
       isHigh
-        ? 'border-red-200 hover:border-red-400 shadow-sm shadow-red-500/5'
+        ? 'border-red-300 hover:border-red-400 shadow-sm shadow-red-500/10 ring-1 ring-red-400/20'
+        : isMedium
+        ? 'border-amber-200 hover:border-amber-300 shadow-sm'
         : 'border-gray-200 hover:border-emerald-300 shadow-sm'
     }`}>
+      {/* Interactive Problem Animation Overlay (Water splash, Smoke, Trash flow, etc.) */}
+      <ProblemAnimation
+        type={problemType}
+        active={showAnimation}
+        onComplete={() => setShowAnimation(false)}
+      />
+
       <div>
         {/* Top meta row */}
         <div className="flex items-start justify-between gap-2 mb-2.5">
@@ -124,9 +157,13 @@ export default function TicketCard({ ticket, onStatusChange, onVote }) {
           <PriorityBadge priority={priority} />
         </div>
 
-        {/* Title */}
-        <h3 className="font-bold text-gray-800 text-base leading-snug group-hover:text-emerald-700 transition-colors mb-2">
-          {ticket.title}
+        {/* Title (clickable to trigger problem animation) */}
+        <h3
+          onClick={() => setShowAnimation(true)}
+          className="font-bold text-gray-800 text-base leading-snug group-hover:text-emerald-700 transition-colors mb-2 cursor-pointer flex items-center justify-between"
+          title="Click to see problem animation"
+        >
+          <span>{ticket.title}</span>
         </h3>
 
         {/* Description */}
@@ -134,26 +171,28 @@ export default function TicketCard({ ticket, onStatusChange, onVote }) {
           {ticket.description}
         </p>
 
-        {/* Voting & Community Escalation Bar */}
-        <div className="flex items-center justify-between mb-3.5 bg-gray-50/80 border border-gray-200/70 rounded-xl px-2.5 py-1.5">
+        {/* Voting & Community Escalation Bar (15+ High, 8-14 Medium, <8 Low) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3.5 bg-gray-50/90 border border-gray-200/80 rounded-xl p-2.5">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-gray-600">Affected?</span>
+            <span className="text-[11px] font-bold text-gray-600">Upvote:</span>
             <div className="inline-flex items-center rounded-lg bg-white border border-gray-200 shadow-2xs overflow-hidden">
               <button
                 onClick={() => handleVote('up')}
                 disabled={isVoting}
-                className="px-2 py-0.5 hover:bg-emerald-50 text-emerald-700 hover:text-emerald-800 font-bold transition flex items-center gap-0.5 text-xs active:scale-95"
+                className="px-2.5 py-1 hover:bg-emerald-50 text-emerald-700 hover:text-emerald-800 font-bold transition flex items-center gap-1 text-xs active:scale-95"
                 title="Upvote: I am also experiencing this issue"
               >
-                ▲ <span className="text-[10px]">Upvote</span>
+                ▲ <span className="text-[10px]">Vote</span>
               </button>
-              <span className={`px-2 py-0.5 text-xs font-black border-x border-gray-100 ${votes >= 3 ? 'text-red-600 bg-red-50' : 'text-gray-800'}`}>
+              <span className={`px-2.5 py-1 text-xs font-black border-x border-gray-100 ${
+                votes >= 15 ? 'text-red-600 bg-red-50' : votes >= 8 ? 'text-amber-700 bg-amber-50' : 'text-gray-800'
+              }`}>
                 {votes}
               </span>
               <button
                 onClick={() => handleVote('down')}
                 disabled={isVoting || votes <= 0}
-                className="px-2 py-0.5 hover:bg-red-50 text-gray-400 hover:text-red-600 font-bold transition disabled:opacity-30 text-xs active:scale-95"
+                className="px-2 py-1 hover:bg-red-50 text-gray-400 hover:text-red-600 font-bold transition disabled:opacity-30 text-xs active:scale-95"
                 title="Downvote"
               >
                 ▼
@@ -161,20 +200,41 @@ export default function TicketCard({ ticket, onStatusChange, onVote }) {
             </div>
           </div>
 
-          {votes >= 3 ? (
-            <span className="inline-flex items-center gap-1 text-[10px] font-black text-red-700 bg-red-100 border border-red-200 rounded-full px-2 py-0.5 animate-pulse">
-              🔥 High Priority ({votes} votes)
-            </span>
-          ) : (
-            <span className="text-[10px] text-gray-400 font-medium">
-              {3 - votes} more {3 - votes === 1 ? 'vote' : 'votes'} to High
-            </span>
-          )}
+          {/* Tier Escalation Status */}
+          <div className="flex items-center gap-1.5 self-end sm:self-auto">
+            {votes >= 15 ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-black text-red-700 bg-red-100 border border-red-300 rounded-full px-2 py-0.5 animate-pulse">
+                🔥 High Priority ({votes} votes)
+              </span>
+            ) : votes >= 8 ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-800 bg-amber-100 border border-amber-300 rounded-full px-2 py-0.5">
+                ⚡ Medium ({votes}/15 for High)
+              </span>
+            ) : (
+              <span className="text-[10px] text-gray-500 font-medium">
+                {votes}/8 to Medium • {15 - votes} to High
+              </span>
+            )}
+
+            {/* Interactive Animation Trigger Button */}
+            <button
+              type="button"
+              onClick={() => setShowAnimation(true)}
+              className="text-[10px] font-bold text-emerald-700 hover:text-white bg-emerald-50 hover:bg-emerald-600 border border-emerald-200 rounded-lg px-1.5 py-0.5 transition-colors shadow-2xs"
+              title="Click to view problem visual effect"
+            >
+              {effectLabels[problemType] || '✨ Effect'}
+            </button>
+          </div>
         </div>
 
         {/* Category & Location Badges */}
         <div className="flex flex-wrap gap-1.5 text-xs text-gray-600 mb-4">
-          <span className="bg-emerald-50/80 text-emerald-800 border border-emerald-100/80 rounded-lg px-2.5 py-1 font-medium flex items-center gap-1">
+          <span
+            onClick={() => setShowAnimation(true)}
+            className="cursor-pointer bg-emerald-50/80 hover:bg-emerald-100 text-emerald-800 border border-emerald-100/80 rounded-lg px-2.5 py-1 font-medium flex items-center gap-1 transition"
+            title="Click to trigger effect"
+          >
             🏷️ {ticket.category}
           </span>
           <span className="bg-gray-50 text-gray-700 border border-gray-200/60 rounded-lg px-2.5 py-1 font-medium flex items-center gap-1">
