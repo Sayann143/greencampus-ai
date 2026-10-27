@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import TicketCard from './TicketCard'
 import Modal from './Modal'
-import { fetchTickets, fetchDashboardSummary, updateTicketStatus } from '../api'
+import { fetchTickets, fetchDashboardSummary, updateTicketStatus, voteTicket } from '../api'
 
 // ─── Summary Stats Bar with Resolution Rate & Hover Animations ────────────────
 function StatsBar({ summary, tickets, onOpenTotalModal }) {
@@ -161,6 +161,41 @@ function FilterAndSearchBar({
           </button>
         ))}
       </div>
+
+      {/* Quick Problem Shortcuts (Gas leak, Water leak, Wi-Fi, etc.) */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pt-2 border-t border-gray-100 no-scrollbar">
+        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex-shrink-0 mr-1">
+          Quick Topics:
+        </span>
+        {[
+          { label: '💧 Water Leaks', q: 'water' },
+          { label: '🚨 Gas Leaks', q: 'gas' },
+          { label: '📶 Wi-Fi', q: 'wifi' },
+          { label: '❄️ AC / Cooling', q: 'ac' },
+          { label: '⚡ Sparks / Wires', q: 'electric' },
+          { label: '🗑️ Trash & Bins', q: 'dustbin' },
+        ].map(item => (
+          <button
+            key={item.label}
+            onClick={() => setSearchQuery(searchQuery === item.q ? '' : item.q)}
+            className={`flex-shrink-0 text-[11px] px-2.5 py-1 rounded-lg font-bold border transition-all ${
+              searchQuery.toLowerCase() === item.q
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                : 'bg-white hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 border-gray-200'
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="text-[10px] text-red-600 hover:underline font-bold px-1.5 py-0.5 flex-shrink-0"
+          >
+            Clear filter ✕
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -216,6 +251,19 @@ export default function Dashboard() {
     } catch (err) {
       console.error(`Failed to update status for ticket #${ticketId}:`, err)
       setActionError(`Could not update ticket #${ticketId}: ${err.message}`)
+    }
+  }
+
+  // Handle community upvote / downvote
+  const handleVote = async (ticketId, direction) => {
+    setActionError(null)
+    try {
+      const updated = await voteTicket(ticketId, direction)
+      setTickets(prev => prev.map(t => (t.id === ticketId ? { ...t, ...updated } : t)))
+      fetchDashboardSummary().then(setSummary).catch(() => {})
+    } catch (err) {
+      console.error(`Failed to register vote for ticket #${ticketId}:`, err)
+      setActionError(`Could not register vote: ${err.message}`)
     }
   }
 
@@ -464,6 +512,7 @@ export default function Dashboard() {
                   key={ticket.id}
                   ticket={ticket}
                   onStatusChange={handleStatusChange}
+                  onVote={handleVote}
                 />
               ))}
             </div>

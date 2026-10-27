@@ -75,8 +75,8 @@ SYSTEM_INSTRUCTION_TRIAGE = (
     "- 'Other' (general campus issues not covered above)\n"
     "\n"
     "PRIORITY GUIDELINES:\n"
-    "- 'High': Immediate safety hazards (sparking wires, active flooding, slippery floor in heavy traffic, broken stairs)\n"
-    "- 'Medium': Impairs campus activities or causes discomfort (AC breakdown in lab, unlit path, broken bench, full bins)\n"
+    "- 'High': Immediate safety hazards (gas leak, sparking wires, smoke, active flooding, burst pipes, slippery floor in heavy traffic, broken stairs)\n"
+    "- 'Medium': Impairs campus activities or causes discomfort (AC breakdown in lab, Wi-Fi down in lab/library, unlit path, broken bench, full bins)\n"
     "- 'Low': Minor cosmetic issues, non-urgent maintenance, general feedback\n"
     "\n"
     "STRICT ETHICAL & OPERATIONAL RULES:\n"
@@ -248,8 +248,19 @@ def fallback_classify(
         "food waste", "tree", "greenery", "garden", "plants", "sustainable",
         "sustainability", "conservation", "water waste", "plastic",
     ]
+    gas_keywords = ["gas", "gas leak", "lpg", "cylinder", "methane", "burner leak"]
+    wifi_keywords = ["wifi", "wi-fi", "internet", "ethernet", "network", "offline", "router"]
 
-    if any(k in combined_text for k in water_keywords):
+    if any(k in combined_text for k in gas_keywords):
+        category = "Other"
+        department = "Campus Safety & Emergency Facilities"
+        priority = "High"
+        explanation = (
+            "[Fallback Classifier] Critical gas leak hazard detected. High risk of explosion, fire, or inhalation toxicity."
+        )
+        action = "Evacuate adjacent rooms, isolate the main gas pipeline supply valve, and deploy emergency safety response."
+
+    elif any(k in combined_text for k in water_keywords):
         category: AICategoryType = "Water & Plumbing"
         department = "Facilities Management (Plumbing)"
         high_risk_words = ["flood", "ceiling", "burst", "heavy", "electrical", "hazard", "slip", "gushing"]
@@ -328,6 +339,15 @@ def fallback_classify(
             "[Fallback Classifier] Sustainability or resource conservation opportunity observed."
         )
         action = "Assess conservation impact, adjust timers or signage, and log for the campus sustainability review."
+
+    elif any(k in combined_text for k in wifi_keywords):
+        category = "Other"
+        department = "IT & Campus Network Services"
+        priority = "Medium" if "lab" in combined_text or "exam" in combined_text else "Low"
+        explanation = (
+            "[Fallback Classifier] Wi-Fi or campus network connectivity outage affecting student academic workflows."
+        )
+        action = "Check floor access point status, reboot local switches, and test upstream bandwidth gateway."
 
     else:
         category = "Other"

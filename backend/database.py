@@ -165,8 +165,10 @@ def create_tables():
                     ai_suggestion  TEXT,
                     ai_explanation TEXT,
                     ai_action      TEXT,
+                    votes          INTEGER NOT NULL DEFAULT 0,
                     created_at     TEXT    NOT NULL DEFAULT TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS')
                 );
+                ALTER TABLE tickets ADD COLUMN IF NOT EXISTS votes INTEGER NOT NULL DEFAULT 0;
             """)
 
             # 2. Campus Connect: Student profiles (PostgreSQL)
@@ -243,6 +245,7 @@ def create_tables():
                     ai_suggestion  TEXT,
                     ai_explanation TEXT,
                     ai_action      TEXT,
+                    votes          INTEGER NOT NULL DEFAULT 0,
                     created_at     TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
                 )
             """)
@@ -255,6 +258,8 @@ def create_tables():
                 conn.execute("ALTER TABLE tickets ADD COLUMN ai_explanation TEXT")
             if "ai_action" not in existing_cols:
                 conn.execute("ALTER TABLE tickets ADD COLUMN ai_action TEXT")
+            if "votes" not in existing_cols:
+                conn.execute("ALTER TABLE tickets ADD COLUMN votes INTEGER NOT NULL DEFAULT 0")
 
             # 2. Campus Connect: Student profiles (SQLite)
             conn.execute("""

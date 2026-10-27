@@ -58,15 +58,20 @@ function formatDate(dateStr) {
   }
 }
 
-export default function TicketCard({ ticket, onStatusChange }) {
+export default function TicketCard({ ticket, onStatusChange, onVote }) {
   const [isUpdating, setIsUpdating] = useState(false)
+  const [isVoting, setIsVoting] = useState(false)
   const [showAiDetails, setShowAiDetails] = useState(false)
+  const [localVotes, setLocalVotes] = useState(ticket.votes || 0)
+  const [localPriority, setLocalPriority] = useState(ticket.priority)
 
   const submittedBy = ticket.submitted_by || ticket.submittedBy || 'Anonymous'
   const dateDisplay = formatDate(ticket.created_at || ticket.date)
   const aiSuggestion = ticket.ai_suggestion || ticket.aiSuggestion
   const aiAction = ticket.ai_action
-  const isHigh = ticket.priority === 'High'
+  const votes = typeof ticket.votes === 'number' ? ticket.votes : localVotes
+  const priority = ticket.priority || localPriority
+  const isHigh = priority === 'High'
 
   async function handleStatusSelect(e) {
     const newStatus = e.target.value
@@ -76,6 +81,28 @@ export default function TicketCard({ ticket, onStatusChange }) {
       await onStatusChange(ticket.id, newStatus)
     } finally {
       setIsUpdating(false)
+    }
+  }
+
+  async function handleVote(direction) {
+    if (isVoting || !onVote) return
+    setIsVoting(true)
+    // Optimistic update
+    const delta = direction === 'up' ? 1 : -1
+    const nextVotes = Math.max(0, votes + delta)
+    setLocalVotes(nextVotes)
+    if (nextVotes >= 3) {
+      setLocalPriority('High')
+    }
+    try {
+      await onVote(ticket.id, direction)
+    } catch (err) {
+      // Revert if error
+      setLocalVotes(votes)
+      setLocalPriority(ticket.priority)
+      console.error('Failed to vote:', err)
+    } finally {
+      setIsVoting(false)
     }
   }
 
@@ -94,7 +121,7 @@ export default function TicketCard({ ticket, onStatusChange }) {
             </span>
             <span className="text-[11px] text-gray-400">{dateDisplay}</span>
           </div>
-          <PriorityBadge priority={ticket.priority} />
+          <PriorityBadge priority={priority} />
         </div>
 
         {/* Title */}
@@ -103,9 +130,47 @@ export default function TicketCard({ ticket, onStatusChange }) {
         </h3>
 
         {/* Description */}
-        <p className="text-xs text-gray-600 mb-3.5 line-clamp-2 leading-relaxed">
+        <p className="text-xs text-gray-600 mb-3 line-clamp-2 leading-relaxed">
           {ticket.description}
         </p>
+
+        {/* Voting & Community Escalation Bar */}
+        <div className="flex items-center justify-between mb-3.5 bg-gray-50/80 border border-gray-200/70 rounded-xl px-2.5 py-1.5">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-gray-600">Affected?</span>
+            <div className="inline-flex items-center rounded-lg bg-white border border-gray-200 shadow-2xs overflow-hidden">
+              <button
+                onClick={() => handleVote('up')}
+                disabled={isVoting}
+                className="px-2 py-0.5 hover:bg-emerald-50 text-emerald-700 hover:text-emerald-800 font-bold transition flex items-center gap-0.5 text-xs active:scale-95"
+                title="Upvote: I am also experiencing this issue"
+              >
+                ▲ <span className="text-[10px]">Upvote</span>
+              </button>
+              <span className={`px-2 py-0.5 text-xs font-black border-x border-gray-100 ${votes >= 3 ? 'text-red-600 bg-red-50' : 'text-gray-800'}`}>
+                {votes}
+              </span>
+              <button
+                onClick={() => handleVote('down')}
+                disabled={isVoting || votes <= 0}
+                className="px-2 py-0.5 hover:bg-red-50 text-gray-400 hover:text-red-600 font-bold transition disabled:opacity-30 text-xs active:scale-95"
+                title="Downvote"
+              >
+                ▼
+              </button>
+            </div>
+          </div>
+
+          {votes >= 3 ? (
+            <span className="inline-flex items-center gap-1 text-[10px] font-black text-red-700 bg-red-100 border border-red-200 rounded-full px-2 py-0.5 animate-pulse">
+              🔥 High Priority ({votes} votes)
+            </span>
+          ) : (
+            <span className="text-[10px] text-gray-400 font-medium">
+              {3 - votes} more {3 - votes === 1 ? 'vote' : 'votes'} to High
+            </span>
+          )}
+        </div>
 
         {/* Category & Location Badges */}
         <div className="flex flex-wrap gap-1.5 text-xs text-gray-600 mb-4">

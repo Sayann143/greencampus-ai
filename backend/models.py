@@ -99,6 +99,11 @@ class TicketStatusUpdate(BaseModel):
     status: StatusType = Field(..., description="New status for the ticket")
 
 
+# ── Model for voting on a ticket (POST /api/tickets/{id}/vote) ────────────────
+class TicketVoteRequest(BaseModel):
+    direction: Literal["up", "down"] = Field("up", description="'up' to upvote, 'down' to downvote")
+
+
 # ── Model for reading/returning a ticket (all GET responses) ──────────────────
 class TicketOut(BaseModel):
     id:             int
@@ -113,6 +118,7 @@ class TicketOut(BaseModel):
     ai_suggestion:  Optional[str] = None
     ai_explanation: Optional[str] = None
     ai_action:      Optional[str] = None
+    votes:          int = 0
     created_at:     str
 
     model_config = {"from_attributes": True}

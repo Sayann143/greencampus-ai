@@ -15,6 +15,58 @@ const CATEGORIES = [
   'Other',
 ]
 
+// Quick-select preset templates for common campus issues
+const COMMON_ISSUE_PRESETS = [
+  {
+    icon: '🚨',
+    label: 'Gas Leak',
+    title: 'Strong gas leak smell near Chemistry Lab / Canteen',
+    category: 'Safety & Security',
+    location: 'Chemistry Block, Ground Floor Lab 2',
+    description: 'Noticeable strong gas odor detected near the supply pipeline and burner stations. Potential fire and inhalation hazard, requires urgent inspection and gas valve shut-off.',
+  },
+  {
+    icon: '💧',
+    label: 'Water Leak',
+    title: 'Water pipe leak flooding washroom & corridor floor',
+    category: 'Water & Plumbing',
+    location: 'Central Library, 1st Floor Washroom',
+    description: 'A pipe under the washroom sink is actively leaking and water is pooling into the adjacent corridor. Floor is very slippery creating an immediate slip hazard.',
+  },
+  {
+    icon: '📶',
+    label: 'Wi-Fi Not Working',
+    title: 'Campus Wi-Fi connectivity down in Computer Lab',
+    category: 'Internet & IT',
+    location: 'Tech Building, Computer Lab 4',
+    description: 'Students and professors are unable to connect to Campus-Student-5G in Computer Lab 4. Network disconnects repeatedly and student portals fail to load.',
+  },
+  {
+    icon: '❄️',
+    label: 'AC Broken in Lab',
+    title: 'AC unit blowing hot air in Computer Lab',
+    category: 'Electrical',
+    location: 'Tech Building, 2nd Floor Lab 3',
+    description: 'The split AC unit is running but blowing warm humid air. Room temperature is rising and causing overheating of computer systems.',
+  },
+  {
+    icon: '⚡',
+    label: 'Exposed Wires / Sparks',
+    title: 'Sparking electrical switchboard with exposed wires',
+    category: 'Electrical',
+    location: 'Engineering Quad, Corridor near Room 204',
+    description: 'Visible sparking and humming sound from an electrical switchboard. Exposed wiring is visible to passing students, posing a severe shock risk.',
+  },
+  {
+    icon: '🗑️',
+    label: 'Overflowing Bins',
+    title: 'Overflowing dustbins and food waste accumulation',
+    category: 'Cleanliness',
+    location: 'Main Cafeteria Outdoor Seating',
+    description: 'Multiple dustbins are overflowing with food trays and plastic containers, causing foul odor and attracting stray animals.',
+  },
+]
+
 // Field wrapper for consistent layout
 function Field({ label, required, children, hint }) {
   return (
@@ -49,6 +101,25 @@ export default function ReportForm() {
   // Update a single field
   const update = (field) => (e) =>
     setForm(prev => ({ ...prev, [field]: e.target.value }))
+
+  // Apply one-click common issue template
+  const applyPreset = (preset) => {
+    setForm(prev => ({
+      ...prev,
+      title: preset.title,
+      category: preset.category,
+      location: preset.location,
+      description: preset.description,
+    }))
+    setErrors(prev => {
+      const copy = { ...prev }
+      delete copy.title
+      delete copy.category
+      delete copy.location
+      delete copy.description
+      return copy
+    })
+  }
 
   // Client-side validation
   function validate() {
@@ -190,6 +261,34 @@ export default function ReportForm() {
           </div>
         </div>
       )}
+
+      {/* Quick Common Issue Presets */}
+      <div className="mb-6 bg-gradient-to-r from-emerald-50/90 via-teal-50/90 to-green-50/90 border border-emerald-200 rounded-2xl p-4 shadow-sm">
+        <div className="flex items-center justify-between mb-2.5">
+          <span className="text-xs font-black text-emerald-900 tracking-wide uppercase flex items-center gap-1.5">
+            ⚡ Quick Report Common Issues:
+          </span>
+          <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100/80 px-2 py-0.5 rounded-full">
+            1-Click Auto-Fill
+          </span>
+        </div>
+        <p className="text-xs text-emerald-800/80 mb-3">
+          Facing a frequent campus problem like a <strong>water leak</strong>, <strong>gas leak</strong>, or <strong>Wi-Fi outage</strong>? Tap below to auto-fill the report:
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {COMMON_ISSUE_PRESETS.map((preset, idx) => (
+            <button
+              type="button"
+              key={idx}
+              onClick={() => applyPreset(preset)}
+              className="text-xs bg-white hover:bg-emerald-600 text-gray-700 hover:text-white border border-emerald-200 hover:border-emerald-600 font-bold px-3 py-1.5 rounded-xl transition-all shadow-2xs hover:shadow-xs flex items-center gap-1.5 active:scale-95"
+            >
+              <span>{preset.icon}</span>
+              <span>{preset.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-5">
         {/* Row: Name + Email */}

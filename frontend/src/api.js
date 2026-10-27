@@ -134,6 +134,34 @@ export async function updateTicketStatus(ticketId, status) {
   return response.json();
 }
 
+/**
+ * Upvote or downvote a ticket. 3+ votes automatically escalates priority to High.
+ * @param {number} ticketId
+ * @param {'up'|'down'} direction
+ */
+export async function voteTicket(ticketId, direction = 'up') {
+  const response = await fetchWithTimeout(`${API_BASE}/tickets/${ticketId}/vote`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ direction }),
+  }, 10000);
+
+  if (!response.ok) {
+    let errorMessage = `Failed to cast vote (${response.status})`;
+    try {
+      const errorJson = await response.json();
+      if (errorJson.detail) errorMessage = errorJson.detail;
+    } catch {
+      // Use fallback
+    }
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+}
+
 
 // =============================================================================
 // CAMPUS CONNECT: PROFILES & AVAILABILITY

@@ -45,6 +45,7 @@ from database import create_tables, get_connection
 from models import (
     TicketCreate,
     TicketStatusUpdate,
+    TicketVoteRequest,
     TicketOut,
     DashboardSummary,
     AIClassifyRequest,
@@ -320,6 +321,44 @@ def update_ticket_status(ticket_id: int, body: TicketStatusUpdate):
 
     with get_connection() as conn:
         conn.execute("UPDATE tickets SET status = ? WHERE id = ?", (body.status, ticket_id))
+        conn.commit()
+        updated = conn.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+
+    return TicketOut(**dict(updated))
+
+
+@app.post("/api/tickets/{ticket_id}/vote", response_model=TicketOut, tags=["Tickets"])
+def vote_ticket(ticket_id: int, body: TicketVoteRequest):
+    """
+    Vote (upvote or downvote) on a ticket.
+    If 3 or more campus users upvote the ticket, it is automatically
+    escalated to 'High' priority due to high community impact.
+    """
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Ticket with id {ticket_id} not found.")
+
+    current_votes = row["votes"] if ("votes" in row.keys() and row["votes"] is not None) else 0
+    delta = 1 if body.direction == "up" else -1
+    new_votes = max(0, current_votes + delta)
+    current_priority = row["priority"]
+    new_priority = current_priority
+    ai_explanation = row["ai_explanation"] or ""
+
+    # Community Escalation rule: 3+ votes automatically escalate to High priority
+    if new_votes >= 3 and current_priority != "High":
+        new_priority = "High"
+        tag = "[⚡ Community Escalation: 3+ students upvoted this issue, escalating urgency to High Priority.]"
+        if tag not in ai_explanation:
+            ai_explanation = f"{ai_explanation} {tag}".strip()
+
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE tickets SET votes = ?, priority = ?, ai_explanation = ? WHERE id = ?",
+            (new_votes, new_priority, ai_explanation, ticket_id),
+        )
         conn.commit()
         updated = conn.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
 
