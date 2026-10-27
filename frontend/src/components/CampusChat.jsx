@@ -1,13 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
-import { fetchProfiles, fetchMyConnections } from '../api';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { fetchProfiles, fetchMyConnections, sendPeerMessage, fetchPeerThread, markMessagesRead } from '../api';
 import { Link } from 'react-router-dom';
 
-// Canonical storage key for shared thread between two student profiles
-const getThreadKey = (id1, id2) => {
-  if (!id1 || !id2) return null;
-  const [a, b] = [Number(id1), Number(id2)].sort((x, y) => x - y);
-  return `greencampus_peer_thread_${a}_${b}`;
-};
+const POLL_INTERVAL_MS = 3000; // Poll every 3 seconds for new messages
 
 export default function CampusChat() {
   const [profiles, setProfiles] = useState([]);
@@ -19,11 +14,25 @@ export default function CampusChat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
   const [errorBanner, setErrorBanner] = useState(null);
   const [searchFilter, setSearchFilter] = useState('');
-  const messagesEndRef = useRef(null);
+  const [lastMsgId, setLastMsgId] = useState(0); // For incremental polling
+  // Track unread counts per peer (keyed by peer ID)
+  const [unreadCounts, setUnreadCounts] = useState({});
+  // Store the last message preview per peer for the sidebar
+  const [lastMessages, setLastMessages] = useState({});
 
-  // Load all profiles so student can switch profile identity
+  const messagesEndRef = useRef(null);
+  const pollRef = useRef(null);
+  const selectedPeerRef = useRef(selectedPeer);
+  const currentProfileIdRef = useRef(currentProfileId);
+
+  // Keep refs in sync with state so polling closure always uses current values
+  useEffect(() => { selectedPeerRef.current = selectedPeer; }, [selectedPeer]);
+  useEffect(() => { currentProfileIdRef.current = currentProfileId; }, [currentProfileId]);
+
+  // ── Load all profiles so student can switch profile identity ─────────────
   useEffect(() => {
     fetchProfiles()
       .then(profs => {
@@ -37,8 +46,8 @@ export default function CampusChat() {
       .catch(() => {});
   }, []);
 
-  // Load mutual connections whenever currentProfileId changes
-  const loadConnections = async (profId) => {
+  // ── Load mutual connections whenever currentProfileId changes ────────────
+  const loadConnections = useCallback(async (profId) => {
     if (!profId) return;
     setLoading(true);
     setErrorBanner(null);
@@ -46,7 +55,6 @@ export default function CampusChat() {
       const data = await fetchMyConnections(profId);
       setConnections(data || []);
       if (data && data.length > 0) {
-        // Retain selected peer if still connected, otherwise select first
         setSelectedPeer(prev => {
           if (!prev) return data[0].peer_profile;
           const stillThere = data.find(c => c.peer_profile?.id === prev.id);
@@ -57,101 +65,151 @@ export default function CampusChat() {
       }
     } catch (err) {
       console.error('Failed to load connections:', err);
-      setErrorBanner('Syncing with local connection state.');
+      setErrorBanner('Could not load mutual connections. Backend may be waking up...');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadConnections(currentProfileId);
-  }, [currentProfileId]);
+  }, [currentProfileId, loadConnections]);
 
-  // Load thread messages whenever selectedPeer or currentProfileId changes
+  // ── Fetch full thread when peer changes ──────────────────────────────────
   useEffect(() => {
     if (!selectedPeer || !currentProfileId) {
       setMessages([]);
+      setLastMsgId(0);
       return;
     }
 
-    const threadKey = getThreadKey(currentProfileId, selectedPeer.id);
-    if (!threadKey) return;
+    setMessages([]);
+    setLastMsgId(0);
+    setErrorBanner(null);
 
-    const saved = localStorage.getItem(threadKey);
-    let thread = [];
-    if (saved) {
-      try {
-        thread = JSON.parse(saved);
-      } catch {
-        thread = [];
-      }
-    }
-
-    // Mark any messages sent by the peer to current student as 'seen'
-    let updated = false;
-    const markedThread = thread.map(msg => {
-      if (String(msg.senderId) === String(selectedPeer.id) && msg.status !== 'seen') {
-        updated = true;
-        return { ...msg, status: 'seen' };
-      }
-      return msg;
-    });
-
-    if (updated) {
-      localStorage.setItem(threadKey, JSON.stringify(markedThread));
-    }
-
-    setMessages(markedThread);
+    fetchPeerThread(Number(currentProfileId), selectedPeer.id, 0)
+      .then(msgs => {
+        setMessages(msgs || []);
+        if (msgs && msgs.length > 0) {
+          setLastMsgId(msgs[msgs.length - 1].id);
+          // Update last message preview for this peer
+          setLastMessages(prev => ({ ...prev, [selectedPeer.id]: msgs[msgs.length - 1] }));
+        }
+        // Mark messages from peer as read now that we're viewing them
+        markMessagesRead(Number(currentProfileId), selectedPeer.id).catch(() => {});
+        // Clear unread count for this peer
+        setUnreadCounts(prev => ({ ...prev, [selectedPeer.id]: 0 }));
+      })
+      .catch(err => {
+        console.error('Failed to load thread:', err);
+        setErrorBanner('Backend is waking up... Messages will load shortly. ☕');
+      });
   }, [selectedPeer, currentProfileId]);
 
-  // Auto-scroll to bottom of conversation
+  // ── Polling for new messages every 3 seconds ─────────────────────────────
+  useEffect(() => {
+    // Clear any existing poll
+    if (pollRef.current) clearInterval(pollRef.current);
+
+    const poll = async () => {
+      const peer = selectedPeerRef.current;
+      const profId = currentProfileIdRef.current;
+      if (!peer || !profId) return;
+
+      try {
+        const msgs = await fetchPeerThread(Number(profId), peer.id, lastMsgIdRef.current);
+        if (msgs && msgs.length > 0) {
+          setMessages(prev => {
+            // Deduplicate by id
+            const existingIds = new Set(prev.map(m => m.id));
+            const newOnes = msgs.filter(m => !existingIds.has(m.id));
+            if (newOnes.length === 0) return prev;
+            const updated = [...prev, ...newOnes];
+            lastMsgIdRef.current = updated[updated.length - 1].id;
+
+            // Update last message preview in sidebar
+            setLastMessages(p => ({ ...p, [peer.id]: updated[updated.length - 1] }));
+
+            // Count new messages FROM peer (for unread badge if on a different chat)
+            const fromPeer = newOnes.filter(m => String(m.sender_id) !== String(profId));
+            if (fromPeer.length > 0) {
+              // Mark as read immediately since we're viewing this conversation
+              markMessagesRead(Number(profId), peer.id).catch(() => {});
+            }
+
+            return updated;
+          });
+        }
+      } catch {
+        // Silently ignore polling errors (network blip / server cold start)
+      }
+    };
+
+    pollRef.current = setInterval(poll, POLL_INTERVAL_MS);
+    return () => clearInterval(pollRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPeer, currentProfileId]);
+
+  // Keep lastMsgId in a ref so polling closure always reads current value
+  const lastMsgIdRef = useRef(0);
+  useEffect(() => { lastMsgIdRef.current = lastMsgId; }, [lastMsgId]);
+
+  // Also sync messages last id to ref whenever messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      lastMsgIdRef.current = messages[messages.length - 1].id;
+    }
+  }, [messages]);
+
+  // ── Auto-scroll to bottom of conversation ────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Switch student profile
+  // ── Switch student profile ────────────────────────────────────────────────
   const handleProfileSwitch = (newId) => {
     setCurrentProfileId(newId);
     localStorage.setItem('greencampus_connect_profile_id', newId);
   };
 
-  // Switch to peer identity (quick switch to reply as peer)
+  // ── Switch to peer identity (quick "reply as peer" button) ───────────────
   const handleSwitchToPeer = () => {
     if (!selectedPeer) return;
-    const peerIdStr = String(selectedPeer.id);
-    const oldStudent = profiles.find(p => String(p.id) === String(currentProfileId));
-    handleProfileSwitch(peerIdStr);
-    if (oldStudent) {
-      setSelectedPeer(oldStudent);
-    }
+    const oldProfile = profiles.find(p => String(p.id) === String(currentProfileId));
+    handleProfileSwitch(String(selectedPeer.id));
+    if (oldProfile) setSelectedPeer(oldProfile);
   };
 
-  // Send a message (no auto-AI replies; leaves message until opened)
-  const handleSend = () => {
+  // ── Send a message to the backend ────────────────────────────────────────
+  const handleSend = async () => {
     const text = input.trim();
-    if (!text || !selectedPeer) return;
+    if (!text || !selectedPeer || sending) return;
 
     setInput('');
+    setSending(true);
     setErrorBanner(null);
 
-    const currentProfile = profiles.find(p => String(p.id) === String(currentProfileId));
-
-    const newMsg = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      senderId: String(currentProfileId),
-      senderName: currentProfile?.name || 'You',
-      recipientId: String(selectedPeer.id),
-      content: text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: 'sent', // 'sent' | 'seen'
-    };
-
-    const threadKey = getThreadKey(currentProfileId, selectedPeer.id);
-    const updated = [...messages, newMsg];
-    setMessages(updated);
-
-    if (threadKey) {
-      localStorage.setItem(threadKey, JSON.stringify(updated));
+    try {
+      const saved = await sendPeerMessage(
+        Number(currentProfileId),
+        selectedPeer.id,
+        text,
+      );
+      // Optimistically add the returned message
+      setMessages(prev => {
+        const existingIds = new Set(prev.map(m => m.id));
+        if (existingIds.has(saved.id)) return prev;
+        const updated = [...prev, saved];
+        lastMsgIdRef.current = saved.id;
+        setLastMessages(p => ({ ...p, [selectedPeer.id]: saved }));
+        return updated;
+      });
+    } catch (err) {
+      setErrorBanner(`Failed to send: ${err.message}`);
+      // Restore input so user doesn't lose their message
+      setInput(text);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -164,34 +222,6 @@ export default function CampusChat() {
     return peer.name.toLowerCase().includes(q) || (peer.department && peer.department.toLowerCase().includes(q));
   });
 
-  // Get last message in thread for a peer
-  const getLastMessageForPeer = (peerId) => {
-    const threadKey = getThreadKey(currentProfileId, peerId);
-    if (!threadKey) return null;
-    const saved = localStorage.getItem(threadKey);
-    if (!saved) return null;
-    try {
-      const arr = JSON.parse(saved);
-      return arr.length > 0 ? arr[arr.length - 1] : null;
-    } catch {
-      return null;
-    }
-  };
-
-  // Count unread messages from a peer
-  const getUnreadCount = (peerId) => {
-    const threadKey = getThreadKey(currentProfileId, peerId);
-    if (!threadKey) return 0;
-    const saved = localStorage.getItem(threadKey);
-    if (!saved) return 0;
-    try {
-      const arr = JSON.parse(saved);
-      return arr.filter(m => String(m.senderId) === String(peerId) && m.status !== 'seen').length;
-    } catch {
-      return 0;
-    }
-  };
-
   return (
     <div className="max-w-6xl mx-auto space-y-4">
       {/* Top Header & Student Identity Switcher */}
@@ -199,13 +229,13 @@ export default function CampusChat() {
         <div>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold mb-1">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            Campus Connect Peer Messenger
+            Live Cross-Device Chat
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
-            Direct Student Peer Chat
+            Campus Connect Peer Messenger
           </h2>
           <p className="text-xs text-gray-500">
-            Real peer-to-peer conversations between connected students. Messages remain in thread until opened.
+            Real messages synced via the server — open on any device and they'll appear instantly.
           </p>
         </div>
 
@@ -232,6 +262,14 @@ export default function CampusChat() {
         </div>
       </div>
 
+      {/* Error Banner */}
+      {errorBanner && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-4 py-2.5 rounded-xl flex items-center justify-between gap-3 shadow-xs">
+          <span>⚠️ {errorBanner}</span>
+          <button onClick={() => setErrorBanner(null)} className="text-amber-600 hover:text-amber-800 font-bold text-sm leading-none">×</button>
+        </div>
+      )}
+
       {/* Main Split Chat View */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-[550px]">
         {/* Left Sidebar: Friends & Mutual Connections */}
@@ -242,7 +280,7 @@ export default function CampusChat() {
                 Mutual Friends ({connections.length})
               </h3>
               <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                Active
+                Live ⚡
               </span>
             </div>
             <div className="relative">
@@ -282,8 +320,8 @@ export default function CampusChat() {
                 const peer = c.peer_profile;
                 if (!peer) return null;
                 const isSelected = selectedPeer?.id === peer.id;
-                const lastMsg = getLastMessageForPeer(peer.id);
-                const unread = getUnreadCount(peer.id);
+                const lastMsg = lastMessages[peer.id] || null;
+                const unread = unreadCounts[peer.id] || 0;
 
                 return (
                   <button
@@ -310,7 +348,9 @@ export default function CampusChat() {
                       <div className="flex items-center justify-between">
                         <h4 className="text-xs font-bold text-gray-900 truncate">{peer.name}</h4>
                         {lastMsg ? (
-                          <span className="text-[10px] text-gray-400 font-mono">{lastMsg.timestamp}</span>
+                          <span className="text-[10px] text-gray-400 font-mono">
+                            {lastMsg.created_at?.slice(11, 16) || ''}
+                          </span>
                         ) : (
                           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                         )}
@@ -318,13 +358,13 @@ export default function CampusChat() {
 
                       <p className="text-[11px] text-gray-500 truncate">
                         {lastMsg
-                          ? (String(lastMsg.senderId) === String(currentProfileId) ? 'You: ' : '') + lastMsg.content
+                          ? (String(lastMsg.sender_id) === String(currentProfileId) ? 'You: ' : '') + lastMsg.content
                           : `${peer.study_year} • ${peer.department}`}
                       </p>
 
                       {unread > 0 && (
                         <span className="inline-block mt-0.5 text-[9px] bg-red-100 text-red-700 font-bold px-1.5 rounded-full">
-                          Unread message
+                          {unread} new
                         </span>
                       )}
                     </div>
@@ -348,8 +388,8 @@ export default function CampusChat() {
                   <div>
                     <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
                       <span>{selectedPeer.name}</span>
-                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.2 rounded-full">
-                        Connected Peer
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                        Connected
                       </span>
                     </h3>
                     <p className="text-xs text-gray-500">
@@ -366,19 +406,10 @@ export default function CampusChat() {
                   >
                     <span>Reply as {selectedPeer.name.split(' ')[0]} 👤</span>
                   </button>
-                  <button
-                    onClick={() => {
-                      if (window.confirm('Clear conversation history with this peer?')) {
-                        const threadKey = getThreadKey(currentProfileId, selectedPeer.id);
-                        if (threadKey) localStorage.removeItem(threadKey);
-                        setMessages([]);
-                      }
-                    }}
-                    className="text-xs text-gray-400 hover:text-red-600 px-2 py-1.5 rounded-lg border border-gray-200 hover:border-red-200 transition"
-                    title="Clear Chat History"
-                  >
-                    🗑️
-                  </button>
+                  <div className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 bg-emerald-50 px-2 py-1.5 rounded-lg border border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
+                    Live
+                  </div>
                 </div>
               </div>
 
@@ -389,12 +420,16 @@ export default function CampusChat() {
                     <p className="text-3xl">👋</p>
                     <p className="text-xs font-bold text-gray-600">Start the conversation with {selectedPeer.name}!</p>
                     <p className="text-[11px] text-gray-400 max-w-sm mx-auto">
-                      Say hello, plan a study session, or share notes. Messages stay open and delivered until the other end responds.
+                      Say hello, plan a study session, or share notes. Messages sync across all devices in real time.
                     </p>
                   </div>
                 ) : (
                   messages.map(msg => {
-                    const isUser = String(msg.senderId) === String(currentProfileId);
+                    const isUser = String(msg.sender_id) === String(currentProfileId);
+                    const timeStr = msg.created_at
+                      ? msg.created_at.slice(11, 16)
+                      : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
                     return (
                       <div
                         key={msg.id}
@@ -424,7 +459,7 @@ export default function CampusChat() {
                               {isUser ? 'You' : selectedPeer.name}
                             </span>
                             <span className={`text-[9px] ${isUser ? 'text-emerald-200' : 'text-gray-400'}`}>
-                              {msg.timestamp}
+                              {timeStr}
                             </span>
                           </div>
                           <p className="text-xs leading-relaxed whitespace-pre-wrap">{msg.content}</p>
@@ -432,10 +467,10 @@ export default function CampusChat() {
                           {/* Delivery status indicator */}
                           {isUser && (
                             <div className="text-[9px] text-emerald-200/90 text-right mt-1 font-mono flex items-center justify-end gap-1">
-                              {msg.status === 'seen' ? (
+                              {msg.is_read === 1 ? (
                                 <span>✓✓ Seen by {selectedPeer.name}</span>
                               ) : (
-                                <span>✓ Sent • Left for {selectedPeer.name}</span>
+                                <span>✓ Delivered • Waiting for {selectedPeer.name}</span>
                               )}
                             </div>
                           )}
@@ -445,12 +480,12 @@ export default function CampusChat() {
                   })
                 )}
 
-                {/* Status notice when waiting for peer */}
-                {messages.length > 0 && String(messages[messages.length - 1].senderId) === String(currentProfileId) && (
+                {/* Status notice when waiting for peer reply */}
+                {messages.length > 0 && String(messages[messages.length - 1].sender_id) === String(currentProfileId) && (
                   <div className="p-2 bg-emerald-50/60 border border-emerald-100 rounded-xl text-center text-[11px] text-emerald-700 animate-fade-in flex items-center justify-center gap-1.5 max-w-md mx-auto">
                     <span>⏳</span>
                     <span>
-                      Message left in chat for <strong>{selectedPeer.name}</strong>. Chat remains open until opened.
+                      Message delivered to <strong>{selectedPeer.name}</strong>. Chat stays open until they reply.
                     </span>
                   </div>
                 )}
@@ -472,14 +507,21 @@ export default function CampusChat() {
                   }}
                   placeholder={`Write message to ${selectedPeer.name}...`}
                   className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
+                  disabled={sending}
                 />
                 <button
                   onClick={handleSend}
-                  disabled={!input.trim()}
+                  disabled={!input.trim() || sending}
                   className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5"
                 >
-                  <span>Send</span>
-                  <span>🚀</span>
+                  {sending ? (
+                    <span className="inline-block animate-spin">⏳</span>
+                  ) : (
+                    <>
+                      <span>Send</span>
+                      <span>🚀</span>
+                    </>
+                  )}
                 </button>
               </div>
             </>
@@ -490,7 +532,7 @@ export default function CampusChat() {
               </div>
               <h3 className="text-base font-bold text-gray-700 mb-1">No peer selected</h3>
               <p className="text-xs text-gray-400 max-w-sm mb-4 leading-relaxed">
-                Choose a connection from the list on the left to start chatting!
+                Choose a connection from the list on the left to start chatting! Messages sync live across all devices.
               </p>
               {connections.length === 0 && (
                 <Link
@@ -503,6 +545,13 @@ export default function CampusChat() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Info Footer */}
+      <div className="text-center text-[11px] text-gray-400 flex items-center justify-center gap-2">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
+        Messages sync every {POLL_INTERVAL_MS / 1000}s across all devices •
+        <span className="text-emerald-600 font-bold">WhatsApp-style delivery receipts</span>
       </div>
     </div>
   );

@@ -295,3 +295,28 @@ class ChatResponse(BaseModel):
     timestamp: str
     suggested_actions: list[str] = Field(default_factory=list)
 
+
+# ── Campus Connect Step 3: Peer Messages ─────────────────────────────────────
+
+class PeerMessageCreate(BaseModel):
+    """Payload to send a peer-to-peer message."""
+    sender_id: int = Field(..., description="Profile ID of the sender")
+    recipient_id: int = Field(..., description="Profile ID of the recipient")
+    content: str = Field(..., min_length=1, max_length=2000, description="Message content")
+
+
+class PeerMessageOut(BaseModel):
+    """One peer message row returned by the API."""
+    id: int
+    sender_id: int
+    recipient_id: int
+    content: str
+    created_at: str
+    is_read: int  # 0 = unread, 1 = read
+
+
+class MarkReadRequest(BaseModel):
+    """Mark messages from sender_id to reader_id as read."""
+    reader_id: int
+    sender_id: int
+

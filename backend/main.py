@@ -28,6 +28,10 @@ Features:
      - GET  /api/connect/requests/status-map (Step 2: Connection status map)
      - PATCH /api/connect/requests/{request_id} (Step 2: Accept or reject request)
      - GET  /api/connect/connections (Step 2: Mutual accepted connections)
+   3. Campus Connect Peer Messages (Step 3: Cross-device real-time chat):
+      - POST /api/connect/messages (Send a peer message)
+      - GET  /api/connect/messages (Fetch thread between two profiles)
+      - PATCH /api/connect/messages/read (Mark messages as read)
 """
 
 import json
@@ -56,6 +60,9 @@ from models import (
     ConnectionOut,
     ChatRequest,
     ChatResponse,
+    PeerMessageCreate,
+    PeerMessageOut,
+    MarkReadRequest,
 )
 from seed import seed_database
 from ai_service import classify_ticket, is_api_key_configured, generate_chat_reply
@@ -875,3 +882,104 @@ def get_connection_status_map(profile_id: int = Query(..., description="Student 
                 status_map[target_id] = "REJECTED"
 
     return status_map
+
+
+# =============================================================================
+# CAMPUS CONNECT STEP 3: PEER-TO-PEER MESSAGES (Cross-device real-time chat)
+# =============================================================================
+
+@app.post("/api/connect/messages", tags=["Campus Connect Messages"], response_model=PeerMessageOut)
+def send_peer_message(payload: PeerMessageCreate):
+    """
+    Send a peer-to-peer message. Stored in the database so it is
+    visible to the recipient on any device when they poll.
+    """
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Insert the message
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO peer_messages (sender_id, recipient_id, content, created_at, is_read)
+            VALUES (?, ?, ?, ?, 0)
+            """,
+            (payload.sender_id, payload.recipient_id, payload.content, now),
+        )
+
+    # Fetch the just-inserted row (latest for this sender→recipient pair with same timestamp)
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM peer_messages
+            WHERE sender_id = ? AND recipient_id = ? AND created_at = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (payload.sender_id, payload.recipient_id, now),
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=500, detail="Failed to save message")
+
+    return PeerMessageOut(
+        id=row["id"],
+        sender_id=row["sender_id"],
+        recipient_id=row["recipient_id"],
+        content=row["content"],
+        created_at=row["created_at"],
+        is_read=row["is_read"],
+    )
+
+
+@app.get("/api/connect/messages", tags=["Campus Connect Messages"], response_model=list[PeerMessageOut])
+def get_peer_thread(
+    profile_a: int = Query(..., description="First participant profile ID"),
+    profile_b: int = Query(..., description="Second participant profile ID"),
+    after_id: int = Query(0, description="Only return messages with id > after_id (for polling)"),
+):
+    """
+    Fetch the full message thread between two students (in either direction),
+    ordered by creation time. Use after_id for incremental polling.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM peer_messages
+            WHERE (
+                (sender_id = ? AND recipient_id = ?)
+                OR
+                (sender_id = ? AND recipient_id = ?)
+            )
+            AND id > ?
+            ORDER BY id ASC
+            """,
+            (profile_a, profile_b, profile_b, profile_a, after_id),
+        ).fetchall()
+
+    return [
+        PeerMessageOut(
+            id=r["id"],
+            sender_id=r["sender_id"],
+            recipient_id=r["recipient_id"],
+            content=r["content"],
+            created_at=r["created_at"],
+            is_read=r["is_read"],
+        )
+        for r in rows
+    ]
+
+
+@app.patch("/api/connect/messages/read", tags=["Campus Connect Messages"])
+def mark_messages_read(payload: MarkReadRequest):
+    """
+    Mark all unread messages sent by sender_id to reader_id as read (is_read=1).
+    Call this when the reader opens the conversation.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE peer_messages
+            SET is_read = 1
+            WHERE sender_id = ? AND recipient_id = ? AND is_read = 0
+            """,
+            (payload.sender_id, payload.reader_id),
+        )
+    return {"ok": True}

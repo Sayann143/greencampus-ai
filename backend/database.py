@@ -210,6 +210,18 @@ def create_tables():
                     updated_at   TEXT    NOT NULL DEFAULT TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS')
                 );
             """)
+
+            # 5. Campus Connect: Peer-to-peer messages (PostgreSQL)
+            conn.raw_conn.cursor().execute("""
+                CREATE TABLE IF NOT EXISTS peer_messages (
+                    id           SERIAL PRIMARY KEY,
+                    sender_id    INTEGER NOT NULL REFERENCES student_profiles(id) ON DELETE CASCADE,
+                    recipient_id INTEGER NOT NULL REFERENCES student_profiles(id) ON DELETE CASCADE,
+                    content      TEXT    NOT NULL,
+                    created_at   TEXT    NOT NULL DEFAULT TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
+                    is_read      INTEGER NOT NULL DEFAULT 0
+                );
+            """)
             conn.commit()
             logger.info("PostgreSQL database tables verified.")
 
@@ -286,6 +298,20 @@ def create_tables():
                     updated_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
                     FOREIGN KEY(sender_id) REFERENCES student_profiles(id) ON DELETE CASCADE,
                     FOREIGN KEY(receiver_id) REFERENCES student_profiles(id) ON DELETE CASCADE
+                )
+            """)
+
+            # 5. Campus Connect Step 3: Peer-to-peer messages (SQLite)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS peer_messages (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sender_id    INTEGER NOT NULL,
+                    recipient_id INTEGER NOT NULL,
+                    content      TEXT    NOT NULL,
+                    created_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
+                    is_read      INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY(sender_id)    REFERENCES student_profiles(id) ON DELETE CASCADE,
+                    FOREIGN KEY(recipient_id) REFERENCES student_profiles(id) ON DELETE CASCADE
                 )
             """)
             conn.commit()

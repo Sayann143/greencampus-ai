@@ -403,3 +403,69 @@ export async function sendChatMessage(message, history = []) {
 
   return response.json();
 }
+
+// =============================================================================
+// CAMPUS CONNECT STEP 3: PEER-TO-PEER MESSAGES (Cross-device real-time chat)
+// =============================================================================
+
+/**
+ * Send a peer-to-peer message (stored in backend DB → cross-device).
+ * @param {number} senderId
+ * @param {number} recipientId
+ * @param {string} content
+ */
+export async function sendPeerMessage(senderId, recipientId, content) {
+  const response = await fetchWithTimeout(`${API_BASE}/connect/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sender_id: senderId, recipient_id: recipientId, content }),
+  }, 10000);
+
+  if (!response.ok) {
+    let errorMessage = `Failed to send message (${response.status})`;
+    try {
+      const errorJson = await response.json();
+      if (errorJson.detail) errorMessage = errorJson.detail;
+    } catch { /* Fallback */ }
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch the full message thread between two students.
+ * Use polling every 3s to receive new messages across devices.
+ * @param {number} profileA
+ * @param {number} profileB
+ * @param {number} afterId - Only fetch messages with id > afterId (0 = all)
+ */
+export async function fetchPeerThread(profileA, profileB, afterId = 0) {
+  const url = `${API_BASE}/connect/messages?profile_a=${profileA}&profile_b=${profileB}&after_id=${afterId}`;
+  const response = await fetchWithTimeout(url, {}, 10000);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch messages (${response.status})`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Mark all messages sent by sender_id to reader_id as read (is_read = 1).
+ * @param {number} readerId - The user who is currently reading
+ * @param {number} senderId - The user whose messages are being marked as read
+ */
+export async function markMessagesRead(readerId, senderId) {
+  const response = await fetchWithTimeout(`${API_BASE}/connect/messages/read`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reader_id: readerId, sender_id: senderId }),
+  }, 8000);
+
+  if (!response.ok) {
+    console.warn('markMessagesRead failed (non-critical):', response.status);
+  }
+
+  return response.ok ? response.json() : { ok: false };
+}
