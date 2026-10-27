@@ -46,6 +46,7 @@ export default function CampusChat() {
   const [lastMsgId, setLastMsgId] = useState(0); // For incremental polling
   const [unreadCounts, setUnreadCounts] = useState({});
   const [lastMessages, setLastMessages] = useState({});
+  const [serverStatus, setServerStatus] = useState('checking'); // 'checking' | 'connected' | 'needs_deploy'
 
   const messagesEndRef = useRef(null);
   const pollRef = useRef(null);
@@ -159,6 +160,7 @@ export default function CampusChat() {
     // Step 2: Sync with backend server
     fetchPeerThread(senderId, peerId, 0)
       .then(serverMsgs => {
+        setServerStatus('connected');
         if (serverMsgs && serverMsgs.length > 0) {
           setMessages(prev => {
             // Deduplicate and merge server messages with local-only messages
@@ -178,6 +180,9 @@ export default function CampusChat() {
         setUnreadCounts(prev => ({ ...prev, [peerId]: 0 }));
       })
       .catch(err => {
+        if (err.message && (err.message.includes('404') || err.message.includes('Failed to fetch'))) {
+          setServerStatus('needs_deploy');
+        }
         console.log('Peer thread background sync note:', err.message);
       });
   }, [selectedPeer, currentProfileId]);
@@ -193,6 +198,7 @@ export default function CampusChat() {
 
       try {
         const msgs = await fetchPeerThread(Number(profId), peer.id, lastMsgIdRef.current);
+        setServerStatus('connected');
         if (msgs && msgs.length > 0) {
           setMessages(prev => {
             const existingIds = new Set(prev.map(m => m.id));
@@ -210,8 +216,10 @@ export default function CampusChat() {
             return updated;
           });
         }
-      } catch {
-        // Silently ignore polling network blips
+      } catch (err) {
+        if (err.message && err.message.includes('404')) {
+          setServerStatus('needs_deploy');
+        }
       }
     };
 
@@ -289,6 +297,7 @@ export default function CampusChat() {
     setSending(true);
     try {
       const saved = await sendPeerMessage(senderId, peerId, text);
+      setServerStatus('connected');
       // Replace optimistic message with confirmed server message
       setMessages(prev => {
         const updated = prev.map(m => m.id === tempId ? { ...saved, is_local: false, sync_pending: false } : m);
@@ -299,6 +308,9 @@ export default function CampusChat() {
       });
     } catch (err) {
       console.warn('Backend message sync queued locally:', err);
+      if (err.message && (err.message.includes('404') || err.message.includes('Failed to send'))) {
+        setServerStatus('needs_deploy');
+      }
       // Keep message in thread marked as delivered locally
       setMessages(prev => {
         const updated = prev.map(m => m.id === tempId ? { ...m, sync_pending: false, is_delivered_locally: true } : m);
@@ -324,10 +336,17 @@ export default function CampusChat() {
       {/* Top Header & Student Identity Switcher */}
       <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold mb-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            Live Cross-Device Chat
-          </div>
+          {serverStatus === 'connected' ? (
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold mb-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Live Cloud Sync Active (Cross-Device 🌐)
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold mb-1">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+              Local Cache Mode • Awaiting Render Cloud Deploy
+            </div>
+          )}
           <h2 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight flex items-center gap-2">
             <span>Campus Connect Peer Messenger</span>
             <span className="text-xl transition-transform hover:scale-125 duration-200 inline-block cursor-default">💬</span>
@@ -360,6 +379,39 @@ export default function CampusChat() {
           </Link>
         </div>
       </div>
+
+      {/* Cloud Deployment Guidance Alert (shown only when Render has not yet deployed messages routes) */}
+      {serverStatus === 'needs_deploy' && (
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 text-amber-950 p-4 rounded-2xl shadow-sm space-y-2.5 animate-fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">⚠️</span>
+              <h4 className="font-black text-sm text-amber-900 tracking-tight">
+                To chat across different devices, Render needs 1 click to deploy the latest code:
+              </h4>
+            </div>
+            <a
+              href="https://dashboard.render.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="self-start sm:self-auto bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs whitespace-nowrap shadow-xs transition hover:scale-105 active:scale-95"
+            >
+              Open Render Dashboard ↗
+            </a>
+          </div>
+
+          <p className="text-xs text-amber-800 leading-relaxed">
+            Messages are currently saved on this device. To send messages between <strong>different phones & computers over the internet</strong>, Render needs to load the new database routes:
+          </p>
+
+          <ol className="list-decimal list-inside space-y-1.5 text-xs text-amber-900 bg-white/80 p-3 rounded-xl border border-amber-200 font-medium">
+            <li>Open <a href="https://dashboard.render.com" target="_blank" rel="noopener noreferrer" className="underline font-bold text-emerald-700">dashboard.render.com ↗</a></li>
+            <li>Click your service: <strong>greencampus-ai-tfjl</strong></li>
+            <li>In the top right corner, click <strong>Manual Deploy</strong> → <strong>Deploy latest commit</strong></li>
+            <li>Wait 1-2 minutes until Render shows a green dot. This banner will turn into <strong>Live Cloud Active 🌐</strong> and messages will instantly appear on the other device!</li>
+          </ol>
+        </div>
+      )}
 
       {/* Error / Status Banner */}
       {errorBanner && (
