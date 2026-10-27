@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { sendChatMessage } from '../api'
+import { getEchoLocalResponse } from '../echoKnowledge'
 import { Link } from 'react-router-dom'
 
 // ─── Preset Quick Starter Prompts for Students ───────────────────────────────
@@ -225,22 +226,16 @@ export default function ChatAssistant() {
         },
       ])
     } catch (err) {
-      console.error('Chat error:', err)
-      setErrorBanner(
-        'AI servers are busy. The fallback engine answered or is retrying. You can still submit reports via the Report tab!'
-      )
-      // Provide graceful in-chat reply
+      console.warn('Backend unavailable or rate-limited. Activating Echo local campus engine:', err)
+      const local = getEchoLocalResponse(query)
       setMessages(prev => [
         ...prev,
         {
           role: 'assistant',
-          content:
-            "⚠️ External AI free quotas are temporarily busy, but I've got your back! " +
-            "If you need to report an urgent issue (leak, electrical, trash), click **Report Issue** above. " +
-            "For meetups, check **Campus Connect**! 🌿",
-          provider: 'fallback',
-          timestamp: 'Fallback',
-          suggested_actions: ['Report Issue ✏️', 'Campus Connect 🤝', 'Dashboard 📊'],
+          content: local.reply,
+          provider: 'local-engine',
+          timestamp: local.timestamp,
+          suggested_actions: local.suggested_actions || [],
         },
       ])
     } finally {

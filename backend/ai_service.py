@@ -692,14 +692,85 @@ def _campus_knowledge_fallback(message: str) -> ChatResponse:
         )
         actions = ["Campus Green Map 🗺️", "Report Energy Waste 💡"]
 
-    # 8. General Campus Query
+    # 8. Library & Study Spaces
+    elif any(w in text for w in ["library", "study space", "reading room", "where to study", "books", "silent"]):
+        reply = (
+            "📚 **Central Library & Study Spaces Guide:**\n\n"
+            "• **Timings:** Open Monday to Saturday **8:00 AM to 10:00 PM** (open 24/7 during midterm and final exam weeks!).\n"
+            "• **Ground Floor:** Collaborative discussion pods and e-resource computer terminals.\n"
+            "• **2nd Floor:** Silent reading cubicles with personal charging ports and lamps.\n"
+            "• **Borrowing:** Up to 4 textbooks for 14 days using your Student ID card.\n\n"
+            "💡 Want a study partner right now? Hop over to **Campus Connect** and broadcast a study session at the Library! 🤝"
+        )
+        actions = ["Open Campus Connect 🤝", "Study Tips 📝", "Dashboard Status 📊"]
+
+    # 9. Wi-Fi, Internet & IT Support
+    elif any(w in text for w in ["wifi", "wi-fi", "internet", "network", "login", "eduroam", "portal", "password"]):
+        reply = (
+            "💻 **Campus Wi-Fi & IT Services:**\n\n"
+            "• **Network Name (SSID):** Connect to `'Campus-Student-5G'` or `'eduroam'`.\n"
+            "• **Credentials:** Use your university roll number / student email and portal password.\n"
+            "• **Coverage Hotspots:** Central Library, Student Activity Center (SAC), and Engineering Quads have the highest 5GHz bandwidth.\n"
+            "• **Troubleshooting:** If you are locked out or need a password reset, visit the **IT Helpdesk** (Tech Building, Room 104) or report a ticket under 'Other'. ⚡"
+        )
+        actions = ["Report IT Issue ✏️", "Campus Map 📍", "Library Wi-Fi 📚"]
+
+    # 10. Cafeteria, Canteen & Food
+    elif any(w in text for w in ["food", "canteen", "cafe", "cafeteria", "lunch", "dinner", "breakfast", "coffee", "snack", "mess", "hungry"]):
+        reply = (
+            "☕🍽️ **Campus Dining & Food Options:**\n\n"
+            "• **Main Cafeteria:** Serves full meals and healthy salads (Breakfast: 7:30-10:00 AM, Lunch: 12:00-3:00 PM, Dinner: 7:00-9:30 PM).\n"
+            "• **SAC Cafe & Juice Bar:** Fresh coffee, tea, and quick wraps (Open 8:00 AM - 10:00 PM).\n"
+            "• **Green Eco-Discount:** Bring your own reusable tumbler or mug to get a **10% discount** and prevent single-use cup waste! 🌱\n\n"
+            "Looking for someone to grab coffee or lunch with? Head to **Campus Connect** and broadcast a quick meetup!"
+        )
+        actions = ["Meet for Coffee ☕", "Eco Habits 🌱", "Report Cleanliness 🧹"]
+
+    # 11. Clubs, Sports, Gym & Student Life
+    elif any(w in text for w in ["club", "sports", "gym", "badminton", "cricket", "football", "fitness", "workout", "society", "fest", "hackathon"]):
+        reply = (
+            "🎉🏆 **Sports, Clubs & Student Life:**\n\n"
+            "• **Campus Gym & Fitness Center:** Open daily **6:00 AM - 9:30 AM** and **4:30 PM - 9:00 PM** (Free entry for enrolled students).\n"
+            "• **Sports Complex:** Features 3 indoor wooden badminton courts, table tennis tables, and the main sports ground.\n"
+            "• **Student Clubs:** Over 20 active societies including Coding Club, Robotics Lab, GreenCampus Eco Alliance, Debating Society, and Photography Club.\n"
+            "• **Registrations:** Visit the Student Activity Center (SAC) desk or look out for Club Fair orientation week! ✨"
+        )
+        actions = ["Find Study/Sport Buddy 🤝", "Campus Map 📍", "Eco Club 🌱"]
+
+    # 12. Exams, Academics & Study Tips
+    elif any(w in text for w in ["exam", "test", "study tip", "cgpa", "grade", "assignment", "notes", "syllabus", "tips"]):
+        reply = (
+            "📝💡 **Exam Preparation & Study Tips:**\n\n"
+            "1. **Active Recall & Feynman Technique:** Test yourself by explaining key concepts out loud without looking at notes.\n"
+            "2. **Pomodoro Sprints:** 25 minutes of deep focus followed by a 5-minute break. After 4 cycles, take a longer 20-minute walk on the Campus Lawn.\n"
+            "3. **Peer Accountability:** Explaining problems to peers reinforces retention by up to 50%. Use **Campus Connect** to find classmates in your department for collaborative revision!\n"
+            "4. **Past Exam Papers:** Check the Central Library digital portal archives for previous semesters' test patterns. 🚀"
+        )
+        actions = ["Find Study Partner 📚", "Library Timings ⏰", "Sustainability Hacks 🌿"]
+
+    # 13. Friendly Casual Banter ("how are you", "thank you", "joke", "bye")
+    elif any(w in text for w in ["how are you", "how r u", "how do you do"]):
+        reply = "I'm feeling energized and ready to help, thanks for asking! 🌿✨ How are your classes going today? Let me know if you need help navigating campus, finding a study buddy, or checking maintenance tickets! 🚀"
+        actions = ["Find Study Buddy ☕", "Library Timings 📚", "Dashboard 📊"]
+    elif any(w in text for w in ["thank", "thanks", "thx", "appreciate"]):
+        reply = "You're very welcome! Always happy to assist fellow campus members. Feel free to ask anytime you need info, facility help, or eco tips! Have a productive day! 🌿✨"
+        actions = ["Ask Another Question 💬", "Campus Connect 🤝", "Dashboard 📊"]
+    elif any(w in text for w in ["bye", "goodbye", "see you", "cya"]):
+        reply = "Take care and see you around campus! 👋 Don't hesitate to reach back out whenever you need anything. Stay safe and stay green! 🌿"
+        actions = ["Campus Connect 🤝", "Dashboard 📊"]
+
+    # 14. Thoughtful Open-Ended Campus Assistant Response
     else:
         reply = (
-            "Got it! 🌿 As your campus AI companion, I can help you triage facility issues, "
-            "find study partners in **Campus Connect**, check the **Admin Dashboard**, or give eco-tips. "
-            "Could you give me a bit more detail on what you need help with? ✨"
+            f"Got it! 🌿 Regarding your query:\n\n"
+            "As your university smart assistant, I can help you with:\n"
+            "• 📚 **Campus Information:** Library timings (8 AM - 10 PM), cafeteria options, Wi-Fi connectivity, and student clubs.\n"
+            "• 🤝 **Campus Connect:** Finding study buddies or coffee meetups across campus areas.\n"
+            "• 🛠️ **Facilities & Triage:** Checking ticket statuses or routing maintenance requests.\n"
+            "• 🌱 **Eco Advice:** Energy conservation tips and campus recycling programs.\n\n"
+            "Could you tell me a little more about what you'd like to know or accomplish? I'm happy to help! ✨"
         )
-        actions = ["Report Issue ✏️", "Campus Connect 🤝", "Dashboard 📊"]
+        actions = ["Library Hours 📚", "Campus Wi-Fi 💻", "Campus Connect 🤝", "Report Issue ✏️"]
 
     return ChatResponse(
         reply=reply,

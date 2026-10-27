@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { sendChatMessage } from '../api'
+import { getEchoLocalResponse } from '../echoKnowledge'
 
 export default function FloatingChatWidget() {
   const [isOpen, setIsOpen] = useState(false)
@@ -49,13 +50,14 @@ export default function FloatingChatWidget() {
         },
       ])
     } catch {
+      const local = getEchoLocalResponse(query)
       setMessages(prev => [
         ...prev,
         {
           role: 'assistant',
-          content: "⚠️ I'm operating on local campus mode. You can submit reports directly from the Report tab!",
-          provider: 'fallback',
-          timestamp: 'Fallback',
+          content: local.reply,
+          provider: 'echo-engine',
+          timestamp: local.timestamp,
         },
       ])
     } finally {
