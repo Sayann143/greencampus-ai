@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import TicketCard from './TicketCard'
+import Modal from './Modal'
 import { fetchTickets, fetchDashboardSummary, updateTicketStatus } from '../api'
 
 // ─── Summary Stats Bar with Resolution Rate & Hover Animations ────────────────
-function StatsBar({ summary, tickets }) {
+function StatsBar({ summary, tickets, onOpenTotalModal }) {
   const total      = summary?.total       ?? tickets.length
   const open       = summary?.open        ?? tickets.filter(t => t.status === 'Open').length
   const inProgress = summary?.in_progress ?? tickets.filter(t => t.status === 'In Progress').length
@@ -13,7 +14,7 @@ function StatsBar({ summary, tickets }) {
   const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0
 
   const stats = [
-    { label: 'Total Reports',  value: total,      icon: '🎫', bg: 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 text-blue-800' },
+    { label: 'Total Reports',  value: total,      icon: '🎫', bg: 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 text-blue-800', isClickable: true },
     { label: 'Open',           value: open,       icon: '📬', bg: 'bg-gradient-to-br from-red-50 to-rose-50 border-red-200 text-red-700' },
     { label: 'In Progress',    value: inProgress, icon: '⚙️',  bg: 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 text-amber-800' },
     { label: 'Resolved',       value: resolved,   icon: '✅', bg: 'bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200 text-emerald-800' },
@@ -25,23 +26,24 @@ function StatsBar({ summary, tickets }) {
       {/* 5 Top KPI Cards with Hover Lift */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         {stats.map(s => (
-        <div
-          key={s.label}
-          className={`rounded-2xl border p-4 text-center transition-all duration-300 transform hover:-translate-y-1.5 hover:shadow-lg shadow-sm cursor-pointer backdrop-blur-sm ${s.bg}`}
-          onClick={() => s.label === 'Total Reports' && setShowTotalModal(true)}
-        >
-          <div className="text-2xl mb-1.5 transform hover:scale-110 transition-transform">{s.icon}</div>
-          <div className="text-3xl font-extrabold tracking-tight">{s.value}</div>
-          <div className="text-xs font-semibold mt-0.5 opacity-90">{s.label}</div>
-        </div>
-      ))}
           <div
             key={s.label}
-            className={`rounded-2xl border p-4 text-center transition-all duration-300 transform hover:-translate-y-1.5 hover:shadow-lg shadow-sm cursor-default backdrop-blur-sm ${s.bg}`}
+            className={`rounded-2xl border p-4 text-center transition-all duration-300 transform hover:-translate-y-1.5 hover:shadow-lg shadow-sm backdrop-blur-sm ${
+              s.isClickable ? 'cursor-pointer ring-2 ring-blue-300/80 hover:ring-blue-500 scale-[1.02]' : 'cursor-default'
+            } ${s.bg}`}
+            onClick={() => s.isClickable && onOpenTotalModal?.()}
+            title={s.isClickable ? 'Click to inspect breakdown modal' : undefined}
           >
             <div className="text-2xl mb-1.5 transform hover:scale-110 transition-transform">{s.icon}</div>
             <div className="text-3xl font-extrabold tracking-tight">{s.value}</div>
-            <div className="text-xs font-semibold mt-0.5 opacity-90">{s.label}</div>
+            <div className="text-xs font-semibold mt-0.5 opacity-90 flex items-center justify-center gap-1">
+              <span>{s.label}</span>
+              {s.isClickable && (
+                <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded-full font-bold animate-pulse">
+                  Inspect
+                </span>
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -164,13 +166,7 @@ function FilterAndSearchBar({
 }
 
 // ─── Main Dashboard Component ─────────────────────────────────────────────────
-import Modal from './Modal.jsx';
-
 export default function Dashboard() {
-  // Modal for Total Reports details
-  // Imported from ./Modal.jsx
-  // Modal for Total Reports details
-  // Imported from ./Modal.jsx
   const [showTotalModal, setShowTotalModal] = useState(false);
   const [tickets, setTickets] = useState([])
   const [summary, setSummary] = useState(null)
@@ -290,32 +286,87 @@ export default function Dashboard() {
 
             {/* Modal for Total Reports */}
       <Modal isOpen={showTotalModal} onClose={() => setShowTotalModal(false)}>
-        <h2 className="text-xl font-bold mb-4">Total Reports Overview</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
-            <p className="text-sm font-medium text-emerald-800">Total Reports</p>
-            <p className="text-2xl font-bold text-emerald-900">{counts.total}</p>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+            <div className="flex items-center gap-2.5">
+              <span className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-lg">
+                📊
+              </span>
+              <div>
+                <h3 className="text-lg font-extrabold text-gray-900">Campus Reports Telemetry</h3>
+                <p className="text-xs text-gray-500">Live operational audit and status distribution</p>
+              </div>
+            </div>
           </div>
-          <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="text-sm font-medium text-blue-800">Open</p>
-            <p className="text-2xl font-bold text-blue-900">{counts.open}</p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div
+              onClick={() => { setFilter('All'); setShowTotalModal(false); }}
+              className="p-3 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200 cursor-pointer hover:shadow-md transition-all text-center"
+            >
+              <p className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">Total Reports</p>
+              <p className="text-2xl font-black text-blue-900">{counts.total}</p>
+              <span className="text-[10px] text-blue-600 font-medium">All logged</span>
+            </div>
+            <div
+              onClick={() => { setFilter('Open'); setShowTotalModal(false); }}
+              className="p-3 bg-gradient-to-br from-red-50 to-rose-50 rounded-xl border border-red-200 cursor-pointer hover:shadow-md transition-all text-center"
+            >
+              <p className="text-[11px] font-bold text-red-700 uppercase tracking-wider">Open</p>
+              <p className="text-2xl font-black text-red-900">{counts.open}</p>
+              <span className="text-[10px] text-red-600 font-medium">Needs action</span>
+            </div>
+            <div
+              onClick={() => { setFilter('In Progress'); setShowTotalModal(false); }}
+              className="p-3 bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-200 cursor-pointer hover:shadow-md transition-all text-center"
+            >
+              <p className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">In Progress</p>
+              <p className="text-2xl font-black text-amber-900">{counts.inProgress}</p>
+              <span className="text-[10px] text-amber-600 font-medium">Under repair</span>
+            </div>
+            <div
+              onClick={() => { setFilter('Resolved'); setShowTotalModal(false); }}
+              className="p-3 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-200 cursor-pointer hover:shadow-md transition-all text-center"
+            >
+              <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">Resolved</p>
+              <p className="text-2xl font-black text-emerald-900">{counts.resolved}</p>
+              <span className="text-[10px] text-emerald-600 font-medium">Completed</span>
+            </div>
           </div>
-          <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
-            <p className="text-sm font-medium text-amber-800">In Progress</p>
-            <p className="text-2xl font-bold text-amber-900">{counts.inProgress}</p>
+
+          <div className="bg-gray-50 rounded-xl p-3 border border-gray-200/80">
+            <h4 className="text-xs font-bold text-gray-700 mb-2 flex items-center justify-between">
+              <span>Category Distribution</span>
+              <span className="text-[10px] font-normal text-gray-500 font-mono">{categories.filter(c => c !== 'All').length} Active Categories</span>
+            </h4>
+            <div className="flex flex-wrap gap-1.5">
+              {categories.filter(c => c !== 'All').map(cat => {
+                const count = tickets.filter(t => t.category === cat).length;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => { setSelectedCategory(cat); setShowTotalModal(false); }}
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium bg-white hover:bg-emerald-50 hover:text-emerald-700 border border-gray-200 transition-all flex items-center gap-1.5 shadow-2xs"
+                  >
+                    <span>{cat}</span>
+                    <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-1.5 py-0.2 rounded-full">
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="p-3 bg-teal-50 rounded-lg border border-teal-200">
-            <p className="text-sm font-medium text-teal-800">Resolved</p>
-            <p className="text-2xl font-bold text-teal-900">{counts.resolved}</p>
+
+          <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+            <span>Tip: Click any status card to filter live tickets</span>
+            <button
+              className="px-4 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-xs font-bold transition shadow-xs"
+              onClick={() => setShowTotalModal(false)}
+            >
+              Done
+            </button>
           </div>
-        </div>
-        <div className="mt-4 text-right">
-          <button
-            className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition"
-            onClick={() => setShowTotalModal(false)}
-          >
-            Close
-          </button>
         </div>
       </Modal>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
@@ -372,7 +423,11 @@ export default function Dashboard() {
       ) : (
         <>
           {/* Summary stats bar */}
-          <StatsBar summary={summary} tickets={tickets} />
+          <StatsBar
+            summary={summary}
+            tickets={tickets}
+            onOpenTotalModal={() => setShowTotalModal(true)}
+          />
 
           {/* Filter & Search Controls */}
           <FilterAndSearchBar

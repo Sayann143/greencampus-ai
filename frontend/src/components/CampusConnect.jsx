@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import {
   fetchActiveStudents,
   fetchProfiles,
@@ -766,6 +767,16 @@ export default function CampusConnect() {
             {connections.length}
           </span>
         </button>
+
+        <Link
+          to="/connect/chat"
+          className="px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 shadow-xs"
+        >
+          <span>💬 Peer Chat</span>
+          <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.2 rounded-full font-bold">
+            Live
+          </span>
+        </Link>
       </div>
 
       {/* ── TAB 1: LIVE DIRECTORY ────────────────────────────────────────────── */}
@@ -1141,9 +1152,14 @@ export default function CampusConnect() {
                       </div>
                     )}
 
-                    <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-400">
-                      <span>Connected since:</span>
-                      <span>{conn.connected_since.split(' ')[0]}</span>
+                    <div className="pt-2.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
+                      <span>Connected: {conn.connected_since.split(' ')[0]}</span>
+                      <Link
+                        to="/connect/chat"
+                        className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded-lg transition-colors flex items-center gap-1 shadow-xs"
+                      >
+                        <span>💬 Chat</span>
+                      </Link>
                     </div>
                   </div>
                 )

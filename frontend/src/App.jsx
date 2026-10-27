@@ -2,7 +2,8 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Dashboard from './components/Dashboard'
 import ReportForm from './components/ReportForm'
-import CampusChat from './components/CampusChat';
+import CampusConnect from './components/CampusConnect'
+import CampusChat from './components/CampusChat'
 import ChatAssistant from './components/ChatAssistant'
 import FloatingChatWidget from './components/FloatingChatWidget'
 
@@ -18,8 +19,8 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/report" element={<ReportForm />} />
             <Route path="/connect" element={<CampusConnect />} />
-                          <Route path="/chat" element={<ChatAssistant />} />
-              <Route path="/connect/chat" element={<CampusChat />} />
+            <Route path="/connect/chat" element={<CampusChat />} />
+            <Route path="/chat" element={<ChatAssistant />} />
           </Routes>
         </main>
       </div>

@@ -3,12 +3,14 @@ import { Link, useLocation } from 'react-router-dom'
 export default function Navbar() {
   const location = useLocation()
 
-  const linkClass = (path) =>
-    `px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 flex items-center gap-1.5 ${
-      location.pathname === path
+  const linkClass = (path) => {
+    const isActive = location.pathname === path || (path === '/connect' && location.pathname.startsWith('/connect'))
+    return `px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 flex items-center gap-1.5 ${
+      isActive
         ? 'bg-green-600 text-white shadow-sm'
         : 'text-gray-600 hover:bg-green-50 hover:text-green-700'
     }`
+  }
 
   return (
     <nav className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-50">
